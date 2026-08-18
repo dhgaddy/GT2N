@@ -1,8 +1,12 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: gt2n-fastercap-batch
+  name: dgaddy-gt2n-fastercap-batch
   namespace: vlsida
+  labels:
+    app: gt2n-fastercap
+    project: gt2n
+    user: dgaddy
 spec:
   completions: 20
   parallelism: 20
@@ -10,6 +14,11 @@ spec:
   ttlSecondsAfterFinished: 86400
   backoffLimit: 0
   template:
+    metadata:
+      labels:
+        app: gt2n-fastercap
+        project: gt2n
+        user: dgaddy
     spec:
       restartPolicy: Never
       containers:
