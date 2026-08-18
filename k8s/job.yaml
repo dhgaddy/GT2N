@@ -1,0 +1,41 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gt2n-fastercap-batch
+  namespace: vlsida
+spec:
+  completions: 20
+  parallelism: 20
+  completionMode: Indexed
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: fastercap
+        image: docker.io/openroad/orfs:26Q2
+        command: ["/bin/bash", "/scripts/entrypoint.sh"]
+        env:
+        - name: JOB_COMPLETION_INDEX
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['batch.kubernetes.io/job-completion-index']
+        - name: N_SHARDS
+          value: "20"
+        - name: PARALLEL
+          value: "4"
+        resources:
+          requests:
+            cpu: "32"
+            memory: "16Gi"
+          limits:
+            cpu: "32"
+            memory: "16Gi"
+        volumeMounts:
+        - name: entrypoint
+          mountPath: /scripts
+      volumes:
+      - name: entrypoint
+        configMap:
+          name: gt2n-fastercap-entrypoint
