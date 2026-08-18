@@ -8,11 +8,12 @@ metadata:
     project: gt2n
     user: dgaddy
 spec:
-  completions: 100
-  parallelism: 100
+  completions: 120
+  parallelism: 120
   completionMode: Indexed
   ttlSecondsAfterFinished: 86400
-  backoffLimit: 0
+  backoffLimitPerIndex: 2
+  maxFailedIndexes: 3
   template:
     metadata:
       labels:
@@ -31,7 +32,7 @@ spec:
             fieldRef:
               fieldPath: metadata.annotations['batch.kubernetes.io/job-completion-index']
         - name: N_SHARDS
-          value: "100"
+          value: "120"
         - name: PARALLEL
           value: "4"
         resources:
