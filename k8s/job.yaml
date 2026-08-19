@@ -38,10 +38,10 @@ spec:
         resources:
           requests:
             cpu: "32"
-            memory: "16Gi"
+            memory: "64Gi"
           limits:
             cpu: "32"
-            memory: "16Gi"
+            memory: "64Gi"
         volumeMounts:
         - name: entrypoint
           mountPath: /scripts
