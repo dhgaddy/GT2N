@@ -1,0 +1,61 @@
+diff --git a/FasterCap_v2/FasterCap/Solver/SolveCapacitance.cpp b/FasterCap_v2/FasterCap/Solver/SolveCapacitance.cpp
+index c76ad1d..2a662de 100755
+--- a/FasterCap_v2/FasterCap/Solver/SolveCapacitance.cpp
++++ b/FasterCap_v2/FasterCap/Solver/SolveCapacitance.cpp
+@@ -41,7 +41,10 @@
+ #include "../FasterCapGlobal.h"
+ 
+ // max number of automatic iterations, after which we declare convergence failed
+-#define SOLVE_MAX_AUTO_ITERATIONS  16
++// (bumped from upstream default of 16 -- gt2n probing found real cases still
++// meaningfully improving round-over-round at the original cap, see
++// scratch_logs/FASTERCAP_FINDINGS.md)
++#define SOLVE_MAX_AUTO_ITERATIONS  32
+ // minimum increment factor in terms of # of panels / links for each iteration of the 'auto' option
+ #define SOLVE_AUTO_INCREMENT_FACTOR 1.1
+ // this is 2 / SIN(60), used to get square of equilateral triangle side, given the area
+@@ -480,6 +483,18 @@ int CSolveCap::SolveMain(CAutoRefGlobalVars globalVars, CLin_Matrix &capRe, CLin
+ 				// free memory, to be ready for next iteration
+ 				DeallocateMemory(AUTOREFINE_DEALLMEM_AT_END, globalVars);
+ 			}
++
++			// gt2n local fix: if the loop above ran out of iterations without ever
++			// hitting the 'diff <= target' break, capRe/capIm were never assigned
++			// (the only assignment is on the break path above) and 'ret' still
++			// holds the last sub-step's FC_NORMAL_END, silently reporting success
++			// on an unconverged, best-effort result. Populate the output with the
++			// last computed iteration and signal the failure distinctly instead.
++			if(i >= SOLVE_MAX_AUTO_ITERATIONS) {
++				capRe = cRe[SOLVE_MAX_AUTO_ITERATIONS - 1];
++				capIm = cIm[SOLVE_MAX_AUTO_ITERATIONS - 1];
++				ret = FC_CONVERGENCE_FAILED;
++			}
+     }
+     else {
+       // no automatic calculation of parameters
+@@ -955,6 +970,9 @@ void CSolveCap::PrintRetError(int retErr)
+ 	else if(retErr == FC_USER_BREAK) {
+ 		ErrMsg("\n\nWarning: Program execution stopped on user request!\n");
+ 	}
++	else if(retErr == FC_CONVERGENCE_FAILED) {
++		ErrMsg("\n\nWarning: Automatic refinement did not converge within %d iterations, relative error target not met. Returning best-effort (last computed) result, not a converged one!\n", SOLVE_MAX_AUTO_ITERATIONS);
++	}
+ 	else if(retErr == -5) {
+ 		
+ 	}
+diff --git a/FasterCap_v2/FasterCap/Solver/SolverGlobal.h b/FasterCap_v2/FasterCap/Solver/SolverGlobal.h
+index 24e1f1e..6657a3f 100755
+--- a/FasterCap_v2/FasterCap/Solver/SolverGlobal.h
++++ b/FasterCap_v2/FasterCap/Solver/SolverGlobal.h
+@@ -47,6 +47,11 @@
+ #define FC_CANNOT_GO_OOC		97
+ #define FC_EXCEPTION_ERROR      98
+ #define FC_USER_BREAK			125
++// gt2n local fix: the auto refinement loop exhausted SOLVE_MAX_AUTO_ITERATIONS
++// rounds without the weighted Frobenius norm ever dropping below -a's target.
++// Mapped to sysexits.h EX_TEMPFAIL (75) -- not a hard error, just an unmet
++// accuracy target; caller still gets the best-effort result.
++#define FC_CONVERGENCE_FAILED	75
+ 
+ 
+ #define G_KILOBYTE	1024
