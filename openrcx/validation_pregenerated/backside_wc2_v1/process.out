@@ -1,0 +1,115 @@
+CONDUCTOR {
+	name BPR
+	height 0.09
+	thickness 0.09
+	min_width 0.032
+	min_spacing 0.112
+	top_extension 0
+	bottom_extension 0
+	resistivity 0.070002
+}
+CONDUCTOR {
+	name BM1
+	height 0.592
+	thickness 0.112
+	min_width 0.056
+	min_spacing 0.056
+	top_extension 0
+	bottom_extension 0
+	resistivity 0.046928
+}
+CONDUCTOR {
+	name BM2
+	height 0.928
+	thickness 0.112
+	min_width 0.056
+	min_spacing 0.056
+	top_extension 0
+	bottom_extension 0
+	resistivity 0.046928
+}
+CONDUCTOR {
+	name BM3
+	height 1.264
+	thickness 0.112
+	min_width 0.36
+	min_spacing 0.36
+	top_extension 0
+	bottom_extension 0
+	resistivity 0.02576
+}
+CONDUCTOR {
+	name BM4
+	height 1.6
+	thickness 0.112
+	min_width 0.36
+	min_spacing 0.36
+	top_extension 0
+	bottom_extension 0
+	resistivity 0.02576
+}
+CONDUCTOR {
+	name BRDL
+	height 2.324
+	thickness 0.5
+	min_width 1.6
+	min_spacing 1.6
+	top_extension 0
+	bottom_extension 0
+	resistivity 0.005
+}
+DIELECTRIC {
+	name BPR_diel
+	epsilon 3.9
+	non_conformal_metal 
+	thickness 0.09
+	slope 0
+	next_met 1
+}
+DIELECTRIC {
+	name BM1_diel
+	epsilon 3.9
+	non_conformal_metal 
+	thickness 0.412
+	slope 0
+	next_met 2
+}
+DIELECTRIC {
+	name BM2_diel
+	epsilon 2.5
+	non_conformal_metal 
+	thickness 0.224
+	slope 0
+	next_met 3
+}
+DIELECTRIC {
+	name BM3_diel
+	epsilon 2.5
+	non_conformal_metal 
+	thickness 0.224
+	slope 0
+	next_met 4
+}
+DIELECTRIC {
+	name BM4_diel
+	epsilon 2.5
+	non_conformal_metal 
+	thickness 0.224
+	slope 0
+	next_met 5
+}
+DIELECTRIC {
+	name BRDL_diel
+	epsilon 2.5
+	non_conformal_metal 
+	thickness 0.612
+	slope 0
+	next_met 6
+}
+DIELECTRIC {
+	name air_cap
+	epsilon 1
+	non_conformal_metal 
+	thickness 16
+	slope 0
+}

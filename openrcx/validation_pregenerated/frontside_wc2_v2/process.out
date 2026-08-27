@@ -1,0 +1,277 @@
+CONDUCTOR {
+	name M0
+	height 0.048
+	thickness 0.024
+	min_width 0.012
+	min_spacing 0.012
+	top_extension 0
+	bottom_extension 0
+	resistivity 0.179064
+}
+CONDUCTOR {
+	name M1
+	height 0.128
+	thickness 0.028
+	min_width 0.014
+	min_spacing 0.014
+	top_extension 0
+	bottom_extension 0
+	resistivity 0.1715
+}
+CONDUCTOR {
+	name M2
+	height 0.204
+	thickness 0.024
+	min_width 0.012
+	min_spacing 0.012
+	top_extension 0
+	bottom_extension 0
+	resistivity 0.179064
+}
+CONDUCTOR {
+	name M3
+	height 0.284
+	thickness 0.028
+	min_width 0.014
+	min_spacing 0.014
+	top_extension 0
+	bottom_extension 0
+	resistivity 0.1715
+}
+CONDUCTOR {
+	name M4
+	height 0.396
+	thickness 0.042
+	min_width 0.021
+	min_spacing 0.021
+	top_extension 0
+	bottom_extension 0
+	resistivity 0.147252
+}
+CONDUCTOR {
+	name M5
+	height 0.522
+	thickness 0.042
+	min_width 0.021
+	min_spacing 0.021
+	top_extension 0
+	bottom_extension 0
+	resistivity 0.147252
+}
+CONDUCTOR {
+	name M6
+	height 0.716
+	thickness 0.076
+	min_width 0.038
+	min_spacing 0.038
+	top_extension 0
+	bottom_extension 0
+	resistivity 0.076684
+}
+CONDUCTOR {
+	name M7
+	height 0.944
+	thickness 0.076
+	min_width 0.038
+	min_spacing 0.038
+	top_extension 0
+	bottom_extension 0
+	resistivity 0.076684
+}
+CONDUCTOR {
+	name M8
+	height 1.172
+	thickness 0.076
+	min_width 0.038
+	min_spacing 0.038
+	top_extension 0
+	bottom_extension 0
+	resistivity 0.076684
+}
+CONDUCTOR {
+	name M9
+	height 1.4
+	thickness 0.076
+	min_width 0.038
+	min_spacing 0.038
+	top_extension 0
+	bottom_extension 0
+	resistivity 0.076684
+}
+CONDUCTOR {
+	name M10
+	height 1.7
+	thickness 0.112
+	min_width 0.056
+	min_spacing 0.056
+	top_extension 0
+	bottom_extension 0
+	resistivity 0.046928
+}
+CONDUCTOR {
+	name M11
+	height 2.036
+	thickness 0.112
+	min_width 0.056
+	min_spacing 0.056
+	top_extension 0
+	bottom_extension 0
+	resistivity 0.046928
+}
+CONDUCTOR {
+	name M12
+	height 2.372
+	thickness 0.112
+	min_width 0.36
+	min_spacing 0.36
+	top_extension 0
+	bottom_extension 0
+	resistivity 0.02576
+}
+CONDUCTOR {
+	name M13
+	height 2.708
+	thickness 0.112
+	min_width 0.36
+	min_spacing 0.36
+	top_extension 0
+	bottom_extension 0
+	resistivity 0.02576
+}
+CONDUCTOR {
+	name RDL
+	height 3.32
+	thickness 0.5
+	min_width 1.6
+	min_spacing 1.6
+	top_extension 0
+	bottom_extension 0
+	resistivity 0.005
+}
+DIELECTRIC {
+	name M0_diel
+	epsilon 2.4
+	non_conformal_metal 
+	thickness 0.048
+	slope 0
+	next_met 1
+}
+DIELECTRIC {
+	name M1_diel
+	epsilon 2.4
+	non_conformal_metal 
+	thickness 0.056
+	slope 0
+	next_met 2
+}
+DIELECTRIC {
+	name M2_diel
+	epsilon 2.4
+	non_conformal_metal 
+	thickness 0.048
+	slope 0
+	next_met 3
+}
+DIELECTRIC {
+	name M3_diel
+	epsilon 2.4
+	non_conformal_metal 
+	thickness 0.056
+	slope 0
+	next_met 4
+}
+DIELECTRIC {
+	name M4_diel
+	epsilon 2.5
+	non_conformal_metal 
+	thickness 0.084
+	slope 0
+	next_met 5
+}
+DIELECTRIC {
+	name M5_diel
+	epsilon 2.5
+	non_conformal_metal 
+	thickness 0.084
+	slope 0
+	next_met 6
+}
+DIELECTRIC {
+	name M6_diel
+	epsilon 2.5
+	non_conformal_metal 
+	thickness 0.152
+	slope 0
+	next_met 7
+}
+DIELECTRIC {
+	name M7_diel
+	epsilon 2.5
+	non_conformal_metal 
+	thickness 0.152
+	slope 0
+	next_met 8
+}
+DIELECTRIC {
+	name M8_diel
+	epsilon 2.5
+	non_conformal_metal 
+	thickness 0.152
+	slope 0
+	next_met 9
+}
+DIELECTRIC {
+	name M9_diel
+	epsilon 2.5
+	non_conformal_metal 
+	thickness 0.152
+	slope 0
+	next_met 10
+}
+DIELECTRIC {
+	name M10_diel
+	epsilon 2.5
+	non_conformal_metal 
+	thickness 0.224
+	slope 0
+	next_met 11
+}
+DIELECTRIC {
+	name M11_diel
+	epsilon 2.5
+	non_conformal_metal 
+	thickness 0.224
+	slope 0
+	next_met 12
+}
+DIELECTRIC {
+	name M12_diel
+	epsilon 2.5
+	non_conformal_metal 
+	thickness 0.224
+	slope 0
+	next_met 13
+}
+DIELECTRIC {
+	name M13_diel
+	epsilon 2.5
+	non_conformal_metal 
+	thickness 0.224
+	slope 0
+	next_met 14
+}
+DIELECTRIC {
+	name RDL_diel
+	epsilon 2.5
+	non_conformal_metal 
+	thickness 0.5
+	slope 0
+	next_met 15
+}
+DIELECTRIC {
+	name air_cap
+	epsilon 1
+	non_conformal_metal 
+	thickness 16
+	slope 0
+}
