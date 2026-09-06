@@ -263,7 +263,13 @@ def readFasterCapOutPutLog(in_file, out_file, warnFP, emptyFP, statsFP, dbg):
 
     warning1 = ""
     warning = ""
-    if capMatrixCompleted > 0:
+    # "Weighted Frobenius" is printed by -a auto-refinement's own
+    # convergence check and never appears in manual-refinement mode (no
+    # adaptive loop to report on) -- a manual-mode run that produced
+    # exactly one matrix is complete by construction (there's no "last
+    # vs. second-to-last iteration" ambiguity when there's only one),
+    # so don't require the -a-specific marker in that case.
+    if capMatrixCompleted > 0 or len(iteration) == 1:
         lastIterationIndex = len(iteration) - 1
     else:
         if dbg > 0:
