@@ -372,8 +372,8 @@ minutes, no config change). `M4oM3uM5` reached conclusive INSANE
 verdicts on every point — a real result, done, not a timeout artifact
 after all despite its earlier classification.
 
-**`M14oM13uM15` (all 5 points, both configs) did not converge, and the
-evidence says it never will regardless of time given.** Watched two
+**`M14oM13uM15` (all 5 points) did not converge under `a_0.001_ap`/
+`a_0.005_ap`, even with the time limit removed entirely.** Watched two
 live attempts: FasterCap's inner GMRES solver was repeatedly
 exhausting 1000 iterations without converging — residual plateaued at
 0.04-0.11 against a 0.001 target, 16-20 outer refinement rounds deep,
@@ -382,14 +382,44 @@ genuine wall rather than slow progress: half of the 10 total attempts
 on this pattern grew unboundedly in memory and were killed by the
 pod's 128Gi limit after 16-17 hours, still stuck at the same residual.
 A solve that grows memory without bound while its residual stays flat
-is diverging, not converging slowly — recommend treating this specific
-layer-pair as a dead end for further probing (same recommendation as
-the `UnderDiag` crash cases, though this is a distinct mechanism from
-that — the GMRES linear solver, not the hierarchical multipole
-charge-accumulation assert — and not yet confirmed whether the two are
-related upstream).
+is diverging, not converging slowly under *that* config.
 
 Full writeup: `../scratch_logs/v2_flag_completed_patterns_convprobe_rescue_v4.README.md`.
-Final blackout tally: 360/468 patterns rescued, 16 groups still fully
-blacked out (15 solver-crash, 1 GMRES-non-convergence) — see
+Blackout tally after round 4: 360/468 patterns rescued, 16 groups still
+fully blacked out (15 solver-crash, 1 GMRES-non-convergence) — see
 `BLACKOUT_PATTERNS.md` for the complete current list.
+
+### Round 5 (planned): is `M14oM13uM15` really unconvergeable, or just under the wrong config?
+
+Round 4's framing above ("dead end, stop probing") turned out to be
+premature — it only ruled out the two tight-`-a` configs, not every
+config. Went back to round 1's original 30-config sweep (900s budget)
+and pulled every config's result for this exact pattern (5 spacing
+points), which had been set aside as "irrelevant" once `a_0.001_ap`/
+`a_0.005_ap` were identified as the overall best performers across the
+full 468-pattern set. For *this specific pattern* they are not:
+
+| config (no `-a` override) | S0.36 | S0.54 | S0.72 | S1.08 | S1.8 |
+|---|---|---|---|---|---|
+| `stack_pb128_d01_s003` (`-pB128 -d0.1 -s0.03`) | 0.0467 | 0.0348 | 0.0229 | **0.00015** | 0.0019 |
+| `d_0.05` | 0.0459 | 0.0345 | 0.0232 | 0.000186 | 0.0018 |
+| (all other 20 configs) | 0.045-0.049 | 0.034-0.036 | 0.022-0.024 | 0.0002-0.012 | 0.0016-0.0021 |
+
+Every one of these 22 configs converged in ~5 seconds at round 0 —
+they never entered the long adaptive-refinement loop that
+`a_0.001_ap`/`a_0.005_ap` push into, and never destabilized. At the two
+widest spacings (S1.08, S1.8) several landed within 0.0002-0.002 of
+the sanity threshold — an order of magnitude closer to SANE than
+anything the tight-`-a` configs ever produced under unlimited time.
+At the three tightest spacings (S0.36-S0.72) every config is stuck
+around 0.02-0.05, well short — a real remaining gap, not just missing
+tuning.
+
+**Working hypothesis**: the tight `-a0.001`/`-a0.005` targets are
+likely *causing* the GMRES instability by forcing this specific
+geometry into a mesh-refinement regime it can't handle cleanly, while
+the default (looser) `-a` behavior gets a fast, nearly-clean single
+pass instead. A medium `-a` value — tighter than default, far looser
+than 0.001/0.005 — layered on `stack_pb128_d01_s003`'s flags is the
+concrete next thing to try, targeting first the two wide-spacing
+points where the gap is smallest. Not yet run as of this writing.

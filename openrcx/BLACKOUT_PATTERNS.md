@@ -36,20 +36,29 @@ them run for ~a day.** Result: confirmed the hypothesis was right for
 - `backside OverUnder5 M4oM3uM5`: 0/5 rescued, but reached a genuine
   conclusive INSANE verdict on every point — a real result, not a
   timeout artifact.
-- `frontside OverUnder5 M14oM13uM15`: **0/5 rescued on all 5 spacing
-  points across both configs, and evidence points to this being
-  unconvergeable at any time budget, not merely slow.** Watched two
-  attempts live: FasterCap's inner GMRES solver was repeatedly
-  exhausting 1000 iterations without converging (residual plateaued at
-  0.04-0.11 vs. a 0.001 target, 16-20 outer rounds deep, no trend
-  toward the target), and 5 of the 10 total attempts on this group hit
-  the pod's 128Gi memory ceiling and were killed after 16-17 hours,
-  still stuck at the same residual. Memory growing unboundedly while
-  the residual stays flat is the signature of a solve that will not
-  converge regardless of time or memory given — recommend **not**
-  spending further probe effort here; see
-  `../scratch_logs/v2_flag_completed_patterns_convprobe_rescue_v4.README.md`
-  for the full writeup.
+- `frontside OverUnder5 M14oM13uM15`: **0/5 rescued under `a_0.001_ap`/
+  `a_0.005_ap` on any spacing point, even with the time limit removed
+  entirely.** Watched two attempts live: FasterCap's inner GMRES solver
+  was repeatedly exhausting 1000 iterations without converging
+  (residual plateaued at 0.04-0.11 vs. a 0.001 target, 16-20 outer
+  rounds deep, no trend toward the target), and 5 of the 10 total
+  attempts hit the pod's 128Gi memory ceiling and were killed after
+  16-17 hours, still stuck. That specifically rules out `a_0.001_ap`/
+  `a_0.005_ap` — **it does not rule out this pattern converging under a
+  different config.** Cross-checking round 1's original 30-config data
+  for this exact pattern found the other 22 configs (the ones that
+  don't override `-a` to an aggressive target) all converged in ~5
+  seconds at round 0 — never entering the unstable long-refinement
+  loop at all — and landed within a hair of SANE at the wider spacings:
+  `stack_pb128_d01_s003` (`-pB128 -d0.1 -s0.03`) got a residual
+  magnitude of just **0.00015** at S1.08 and 0.0019 at S1.8 (see
+  `TIMING_REGRESSION_INVESTIGATION.md`'s round-5 section for the full
+  table). That's real evidence a medium `-a` target layered on this
+  config's flags — tighter than "no override" but far short of
+  0.001/0.005 — could plausibly close the gap without triggering the
+  instability. A follow-up targeted probe on exactly this is planned;
+  see `../scratch_logs/v2_flag_completed_patterns_convprobe_rescue_v4.README.md`
+  for the round-4 writeup this superseded.
 
 **16 groups now remain fully blacked out**, split into two distinct,
 unrelated failure modes — not one problem:
@@ -61,9 +70,12 @@ unrelated failure modes — not one problem:
   time or tuning problem. No further probing of these specific groups
   is worthwhile until that bug is fixed or worked around upstream.
 - **1 of 16** (`frontside OverUnder5 M14oM13uM15`) is the GMRES
-  non-convergence case described above — a distinct, also-not-fixable-
-  by-more-time mechanism, possibly related to the same underlying
-  solver instability but not yet confirmed as such.
+  non-convergence case described above — a distinct mechanism from the
+  `UnderDiag` crash (not fixed by more time under the two tight-`-a`
+  configs), but **not confirmed unconvergeable in general** — see the
+  near-sane residuals under other configs noted above. A targeted
+  follow-up probe (medium `-a` values on `stack_pb128_d01_s003`'s base
+  flags) is planned/in progress; update this entry once that resolves.
 
 `backside OverUnder5 M4oM3uM5` moved from "fully blacked out" to
 "reached real INSANE verdicts, not rescued" — it's no longer a timeout
