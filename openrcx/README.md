@@ -175,15 +175,141 @@ The wxWidgets `"Assert failure"` messages FasterCap prints to stderr are
 the known-benign issue the FasterCap README itself documents (fixed
 upstream in wxWidgets >= 3.1.1) -- not a real error.
 
-## Next steps (not started)
+## Status update (2026-09-15): the plan above is done, at full scale
 
-1. Run frontside's pattern set through the same conversion/solve/parse
-   chain (backside is proven; frontside just needs `process.out` copied
-   into `work/frontside/TYP/` first, same workaround as backside).
-2. Decide whether `wire_cnt=1` alone is a sufficient calibration set or
-   whether the fuller `-wire_cnt {2,3,5} -version 2` sweep is needed before
-   assembling the final rules file.
-3. Batch the conversion/solve/parse chain across all 325 + 68 patterns
-   (currently proven on 1 of 393), then assemble the final `.rules` file
-   OpenROAD's `RCX_RULES` expects (`init_rcx_model` + `read_rcx_tables` per
-   corner + `write_rcx_model`).
+The three "next steps" originally listed here (frontside proven,
+`wire_cnt` sweep decided, final rules file assembled) are all complete
+-- scaled up far beyond the single-pattern proof above, via a full
+nonstop -> 3-config experimental -> 7-config D-bracket k8s pipeline
+covering **both** `wire_cnt` in `{1,2,3,5}` (the fuller sweep, not just
+`wire_cnt=1`) across both stacks. See `scratch_logs/V2_FLAG_PROGRESS_TRACKER.md`
+for the full history and final numbers:
+
+- Non-RDL scope: 6,128 patterns, 5,230 converged (85.3%), 898 confirmed
+  unsolvable (a real FastCap solver-precision limitation on weak/long-
+  range coupling terms -- see `scratch_logs/FASTERCAP_FINDINGS.md`),
+  0 remaining untouched.
+- RDL/BRDL (deliberately deferred, see `scratch_logs/RDL_DEFERRED_INDEX.md`):
+  1,107 total, 777 converged, 145 confirmed unsolvable, 185 untouched
+  (out-of-scope v1 patterns from a separate pipeline).
+
+## How the final rules file is actually generated
+
+Three scripts in `scripts/` (not the calibration-flow reference scripts
+above -- these are this project's own, built 2026-09-15):
+
+1. **`gen_resistance_table.py`** -- resistance needs no field solver.
+   Reads `RPSQ` directly from `nxtgrd/GT2.itf` (cross-validated 0.000%
+   against both our own `.pro` translation and HighTide's already-
+   running `setRC.tcl` analytical model, layer by layer). Emits
+   `resistance_{frontside,backside}.TYP` in the format
+   `extRCmodel_solver.cpp::readRCvalues` expects (reverse-engineered
+   from the C++ source -- no example of this file exists anywhere in
+   the codebase).
+2. **`build_combined_caps.py`** -- concatenates every tracked
+   `CONVERGED_SANE` pattern's stored `raw_result` (already-computed
+   data from `scratch_logs/v2_flag_completed_patterns*.tsv`, no
+   FasterCap re-run needed) into `gt2n_{frontside,backside}.caps`, the
+   exact format `read_rcx_tables -file` expects (identical to what
+   `fasterCapParse.py` itself produces).
+3. **`gen_rules_tcl.py`** -- generates `gen_rules_{frontside,backside}.tcl`:
+   `init_rcx_model -met_cnt <15|6>`, then one `read_rcx_tables` call per
+   (`-wire_index` in `{1,2,3}`) x (`-over`/`-under`/`-over_under`/`-diag`)
+   -- matching this project's own wc1/wc2->wire1, wc3->wire2,
+   wc5->wire3 convention -- plus the resistance table, then
+   `write_rcx_model`.
+
+Run order: `gen_resistance_table.py` && `build_combined_caps.py` &&
+`gen_rules_tcl.py`, then `openroad -no_init -exit gen_rules_frontside.tcl`
+and same for backside (each writes its own `.rcx.model`).
+
+**Verified against a real `openroad` binary (26Q2), not just written
+blind** -- found and fixed a real crash in the resistance-line format
+along the way (the pattern-name field needs exactly 5 `/`-separated
+segments; `getAllowedPatternWireNums` indexes backward from the end
+with no bounds check, so a shorter name segfaults). Both stacks now run
+clean end-to-end (0 errors) and produce real, structurally-valid
+`.rcx.model` files -- hand-verified the resistance normalization math
+reproduces the model file's stored values to 5 decimal places.
+
+## Wiring the model in: frontside only, not fused with backside
+
+Investigated how a `.rcx.model` actually gets loaded for a real
+extraction run (there is **no `read_rcx_model` command** -- confirmed
+via a real working reference,
+`rcx_v2/flow/gcd/scripts/gcd_flow_v2_model_v2.tcl`: the real sequence
+is `get_model_corners -ext_model_file <file>` ->
+`define_rcx_corners -corner_list "TYP"` ->
+`set_extraction_rules_file <file>` ->
+`extract_parasitics -version 2.0 ...`).
+
+This raised whether `gt2n_frontside.rcx.model` and
+`gt2n_backside.rcx.model` need to be fused into one combined model or
+wired in as two separate ones for a single BSPDN design. **Neither --
+they belong to two different downstream tools entirely:**
+
+- The PDK's own native reference deck, `qrc/GT2.ict`, only defines
+  `GATE`/`M0`-`M13`/`RDL` -- zero backside conductors. The PDK's own
+  extraction deck never modeled backside for signal-net RC at all.
+- Traced why in source: PSM (`src/psm/src/ir_solver.cpp::getResistanceMap()`)
+  gets its per-layer resistance from the `est` module's simple scalar
+  analytical model (`estimate_parasitics_->layerRC(...)`, the same
+  thing `set_layer_rc`/`setRC.tcl` populates) -- **PSM never touches
+  OpenRCX, `extract_parasitics`, or a `.rcx.model` file.** This is
+  exactly what `setRC.tcl`'s own comment ("PSM needs these to build
+  its resistance map") refers to, specifically for the backside
+  layers.
+
+So: **`gt2n_frontside.rcx.model` is the one real target** for
+`set_extraction_rules_file` + `extract_parasitics` on an actual GT2N
+build. `gt2n_backside.rcx.model` isn't consumable by PSM as generated
+-- if the backside calibration work should feed IR-drop analysis
+later, it needs a separate, much smaller distillation into scalar
+`set_layer_rc` values, not attempted yet.
+
+## Local test build: lfsr, in progress (2026-09-15)
+
+Picked `lfsr` from HighTide's existing gt2n ports -- smallest by far
+(~250 placed instances vs. minimax's ~60k / sha3's 36,195), already has
+a documented QoR baseline, no macros/SRAM. HighTide's
+`tools/bazel_to_orfs.sh designs/gt2n/lfsr` prepares a self-contained,
+bazel-free ORFS bundle; copied `gt2n_frontside.rcx.model` into it and
+added `export RCX_RULES?=<path-to-model>` to its `config.mk`. Ran via
+`FLOW_HOME=<bazel-materialized external/orfs+> OPENROAD_EXE=<local
+openroad-26Q2> YOSYS_EXE=<local yosys> ./run.sh <stage>` (HighTide
+builds OpenROAD/yosys from source rather than a traditional ORFS
+`tools/install/` tree, so both exes need pointing explicitly). `synth`
+completed cleanly as a first smoke test.
+
+## What it would take to make this the upstream default for gt2n
+
+Traced where gt2n's platform files (`lef/`, `lib/`, `gds/`,
+`setRC.tcl`, `config.mk`) come from: HighTide doesn't vendor them --
+the whole `flow/platforms/gt2n/` directory ships inside the **pinned
+OpenROAD-flow-scripts archive itself** (an `archive_override` tarball
+in HighTide's `MODULE.bazel`). HighTide's own
+`patches/orfs-gt2n-flow-build.patch` only adds a small platform-
+registration diff, no platform data.
+
+**Confirmed gt2n currently has zero real extraction by default,
+anywhere upstream.** HighTide's `patches/orfs-no-rcx-spef-stub.patch`
+patches `final_report.tcl`'s `else` branch -- the one that fires
+whenever `RCX_RULES` isn't set -- to stub an empty SPEF after it prints
+`"OpenRCX is not enabled for this platform. Falling back to global
+route-based estimates."` and calls `estimate_parasitics
+-global_routing` (an even cruder fallback than `setRC.tcl`'s per-layer
+scalars). That's the branch every gt2n build currently takes.
+
+**So the real upstream change is a PR to
+`The-OpenROAD-Project/OpenROAD-flow-scripts` itself** (not HighTide,
+not this repo):
+1. Add `gt2n_frontside.rcx.model` into that repo's
+   `flow/platforms/gt2n/` directory.
+2. Add one `config.mk` line: `export RCX_RULES ?= $(PLATFORM_DIR)/gt2n_frontside.rcx.model`.
+3. `final_report.tcl`'s existing `if` branch (already correct) then
+   fires automatically for every gt2n design.
+
+HighTide itself would need no code changes -- just bump the pinned
+OpenROAD-flow-scripts commit once the upstream PR lands, and
+`orfs-no-rcx-spef-stub.patch` becomes dead code for gt2n (check other
+platforms before removing it).
