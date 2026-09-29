@@ -385,11 +385,11 @@ A solve that grows memory without bound while its residual stays flat
 is diverging, not converging slowly under *that* config.
 
 Full writeup: `../scratch_logs/v2_flag_completed_patterns_convprobe_rescue_v4.README.md`.
-Blackout tally after round 4: 360/468 patterns rescued, 16 groups still
-fully blacked out (15 solver-crash, 1 GMRES-non-convergence) — see
-`BLACKOUT_PATTERNS.md` for the complete current list.
+Blackout tally as of round 4 (superseded by rounds 5-6 below):
+360/468 patterns rescued, 16 groups still fully blacked out (15
+solver-crash, 1 GMRES-non-convergence).
 
-### Round 5 (planned): is `M14oM13uM15` really unconvergeable, or just under the wrong config?
+### Round 5-6: is `M14oM13uM15` really unconvergeable, or just under the wrong config?
 
 Round 4's framing above ("dead end, stop probing") turned out to be
 premature — it only ruled out the two tight-`-a` configs, not every
@@ -415,11 +415,229 @@ At the three tightest spacings (S0.36-S0.72) every config is stuck
 around 0.02-0.05, well short — a real remaining gap, not just missing
 tuning.
 
-**Working hypothesis**: the tight `-a0.001`/`-a0.005` targets are
-likely *causing* the GMRES instability by forcing this specific
-geometry into a mesh-refinement regime it can't handle cleanly, while
-the default (looser) `-a` behavior gets a fast, nearly-clean single
-pass instead. A medium `-a` value — tighter than default, far looser
-than 0.001/0.005 — layered on `stack_pb128_d01_s003`'s flags is the
-concrete next thing to try, targeting first the two wide-spacing
-points where the gap is smallest. Not yet run as of this writing.
+**Hypothesis confirmed, with a real boundary, not a smooth gradient.**
+The tight `-a0.001`/`-a0.005` targets were indeed causing the GMRES
+instability. Ran medium `-a` values (0.005, 0.01, 0.02, 0.05, 0.1)
+layered on `stack_pb128_d01_s003`'s exact base flags (`-pB128 -d0.1
+-s0.03`, deliberately no `-ap` — `-ap`'s `AutoSetPrecondType()`
+silently overrides an explicit `-pB*` choice back to Jacobi/Super,
+confirmed earlier this session, so combining them would have
+defeated the point), one pattern per pod, 2h budget:
+
+| spacing | a0.005 | a0.01 | a0.02 | a0.05 | a0.1 |
+|---|---|---|---|---|---|
+| S0.36 | diverged | **SANE** (5s) | SANE | SANE | SANE |
+| S0.54 | diverged | **SANE** (5s) | SANE | SANE | SANE |
+| S0.72 | diverged | diverged | diverged | **SANE** (5s) | SANE |
+| S1.08 | diverged | diverged | **SANE** (5s) | SANE | SANE |
+| S1.8 | diverged | diverged | INSANE | INSANE | INSANE |
+
+"diverged" here is a confirmed live observation, not a timeout guess:
+watched `wires.log` directly and saw the same signature as the
+original `a_0.001_ap`/`a_0.005_ap` failure — Frobenius norm oscillating
+0.45-0.7 with no downward trend, round count nearly frozen (12→16
+rounds over 30+ minutes) — and killed those runs once the signature
+was unambiguous rather than burn the full budget. **The stability
+boundary for this pattern sits at `a≈0.02`**: everything at or above
+converges in 5-10 seconds; everything below (including 0.015, tested
+in a follow-up) reproduces the divergence. Not a smooth gradient —
+0.015 and 0.02 behave completely differently.
+
+4 of 5 spacings rescued immediately at `a≥0.02`. **S1.8 needed one
+more round**: `a0.02`/`0.05`/`0.1` all landed INSANE with small,
+consistent negative CC2 (-0.0006 to -0.004) — close but not sane.
+Varying mesh-shaping independent of `-a` (keeping `a0.02`, the
+tightest stable value): `-s0.01` had **zero effect** (identical
+residuals to plain `a0.02`, `max|CC2|=0.0019` — the panel side-length
+cap wasn't the binding constraint), but `-d0.05` (tighter relative
+mesh-epsilon than the default 0.1) nearly halved it to
+`max|CC2|=0.00092`. Pushed further: `-d0.02` closed the gap to SANE;
+`-d0.01` (tighter still) went back to INSANE — the same
+non-monotonic-boundary pattern as `-a`, just in a different parameter.
+
+**All 5 spacings of `M14oM13uM15` are now `CONVERGED_SANE`.** Full
+per-spacing winning configs and raw data:
+`../scratch_logs/v2_flag_completed_patterns_convprobe_rescue_v5.README.md`.
+This closed the last non-`UnderDiag` gap that was still *fully*
+blacked out (every spacing in the group unconverged) in the 468-pattern
+blackout set as of round 6. As of round 7 below, 22 more of the
+468-pattern set's *partially*-blacked-out patterns are also rescued
+(387/468 total, see `BLACKOUT_PATTERNS.md` for the current
+group-by-group tally) — round 7 worked from a broader, project-wide
+scope than just this doc's 468-pattern set, so most of its 66 rescues
+land outside it. `FASTERCAP_BUG_REPORT.md` has the fix-oriented
+writeup of the confirmed crash bug (root cause, a verified standalone
+reproduction, and a concrete starting point for a fix) — still the
+correct next step for the 15 fully-`UnderDiag` blacked-out groups,
+which round 7 deliberately did not touch (see below).
+
+**Methodological note for future work**: neither `-a` nor `-d` was a
+monotonic "tighter is better/worse" dial here — both had a real
+stability cliff that only showed up via live inspection of round count
+and Frobenius-norm trend, not from trying a few values and reading
+pass/fail. When a globally-best config diverges on one specific
+pattern, check whether looser configs from the original wide sweep
+landed close to sane before concluding it's unconvergeable — that's
+the signal that the aggressive target itself, not the geometry, is the
+problem.
+
+### Round 7: does the crash bug really explain everything else? The `convnc` probe
+
+After round 6 closed `M14oM13uM15`, checked whether the confirmed
+`UnderDiag` crash bug (`UNDERDIAG_CRASH_INVESTIGATION.md`) actually
+accounts for every remaining unconverged pattern, project-wide (not
+just the 468-pattern blackout-*group* set this doc otherwise tracks —
+a broader universe of 369 still-unconverged patterns out of 7056
+total, 6687 already `CONVERGED_SANE`). It does not, cleanly: only
+155/369 belong to the two crash-prone families (`UnderDiag3`,
+`UnderDiag5`). The other **214/369** belong to families that almost
+never crash (`OverUnder5` 92, `OverUnder3` 51, `Under5` 36, `Under3`
+14, `Over3` 11, `Over5` 10) — for these, more probing was worth doing.
+
+Checked first whether "just retry with the known-best configs"
+(`a_0.001_ap`/`a_0.005_ap`) would be worthwhile: 211/214 (98.6%) had
+already failed under one or both of those exact configs in earlier
+rounds. Blind retry was not justified. Residual-magnitude evidence
+pulled from the cached per-pattern batch data was more promising:
+median magnitude 0.000278 across these 214, 71.6% under 0.001, 85.8%
+under 0.002 — closer to sane, on average, than `M14oM13uM15` was
+before round 5-6 rescued it. That's the same signal that justified
+`M14oM13uM15`'s medium-`-a` approach, so applied the same idea at
+scale: single config `-pB128 -d0.1 -s0.03 -a0.02` (the exact winning
+base-flags-plus-medium-`-a` combination from round 5-6), all 214
+patterns, sharded across 40 pods (a hard cap set for this round — no
+more than 40 pods, serialized within each shard rather than one pod
+per pattern).
+
+**Result: 66/214 rescued (31%)** — `OverUnder3` 21, `OverUnder5` 19,
+`Over3` 11, `Under5` 9, `Over5` 3, `Under3` 3. Staged at
+`../scratch_logs/v2_flag_completed_patterns_convprobe_rescue_v7.tsv`
+(config label `convnc_a0.02`). Of the 148 not rescued: 125 landed a
+conclusive `CONVERGED_INSANE` (a real result, not a timeout — mostly
+concentrated in `OverUnder5`, 72/125), 5 hit the confirmed `SIGTRAP`
+crash (4 `Under5` + 1 `Over5`, both backside — this is not a new
+finding, both family types were already known occasional crash
+triggers per `UNDERDIAG_CRASH_INVESTIGATION.md`'s original tally,
+which now stands at 232 total crash occurrences project-wide, up from
+227), and **18 (17 timeout + 1 memory-guard preemption) hit a third,
+previously-uncharacterized failure mode** — see
+`MESH_EXPLOSION_INVESTIGATION.md` for the full writeup. Short version:
+these patterns' adaptive mesh refinement runs away exponentially in
+panel count (60-90x growth over 12 rounds, confirmed via direct
+`wires.log` inspection) while the residual oscillates without ever
+settling below target, exhausting the 3600s/128GB budget without
+either converging or crashing. 14/18 are `Under3`/`Under5` — the same
+family shape that dominates the crash bug, but a mechanically distinct
+problem (no `NaN`/`Inf`, nothing ever diverges numerically — the mesh
+just never stops growing). A follow-up 18-pod probe testing a much
+looser `-a0.1` target (the observed residuals plateau at 0.03-0.15,
+suspiciously close to a loose target) **confirmed the fix decisively**:
+18/18 resolved in 5-55 seconds each, zero timeouts, zero crashes, peak
+memory down ~1000x (tens-hundreds of MB vs. 15-110GB). 5/18 landed
+`CONVERGED_SANE`, staged in
+`../scratch_logs/v2_flag_completed_patterns_convprobe_rescue_v8.tsv`.
+Unlike the `UnderDiag` crash bug, this failure mode needed no upstream
+fix — just a less aggressive target for this pattern population. See
+`MESH_EXPLOSION_INVESTIGATION.md` for the full writeup.
+
+Also hit 3 pod evictions mid-run (`Pod ephemeral local storage usage
+exceeds the total limit of containers 150Gi`), each traced to the
+same cause: a shard's first-assigned `Under3`/`Under5` pattern hitting
+the full timeout while ballooning to 45-55GB peak memory. Fixed each
+time with a per-shard "resume" taskfile excluding the already-timed-out
+pattern rather than a blind full-shard retry — consistent with this
+project's standing convention of not retrying deterministic solver
+failures, only genuine infra failures, and preserving partial shard
+progress when a retry is warranted.
+
+### Round 8: the 138 conclusive-`INSANE` patterns — a fourth, tuning-only phenomenon
+
+After rounds 7's two follow-ups (`convnc`, `convloose`), 138 of the 214
+non-crash-family patterns remained `CONVERGED_INSANE` — a real,
+conclusive result (small negative CC/CC2/FR values), not a timeout or
+crash. Correcting an earlier miscount: this is 138, not 143 — 5 of
+`convnc`'s "non-crash-family" patterns actually did hit the confirmed
+`SIGTRAP` crash (see the crash-tally update above), and those 5 belong
+with the crash-bug population, not this bucket.
+
+Residual-magnitude analysis (parsing each `reason=INSANE:negative
+values: ...` field) found this population's median magnitude is small
+(0.0054) and family-skewed (`Under5` median 0.0015, closest;
+`OverUnder5` 0.0066, largest and also the biggest single family at
+72/125). Crucially, these patterns *converged* — FasterCap stopped
+cleanly at `-a0.02`, in 3-55 seconds, at low round counts — it just
+stopped with small sign-flipped coupling terms. That's a different
+signature from both round-7 fixes: not solver instability (mesh
+explosion), not a `NaN`/`Inf` crash — more consistent with
+under-refinement leaving small-signal noise on weak coupling terms.
+That points the opposite direction from the mesh-explosion fix:
+*tighter* precision, not looser, was the natural thing to try first.
+
+Took the 20 closest-to-sane patterns (magnitude < ~0.002) and re-ran
+each single-pattern-per-pod at `-a0.01` and `-a0.005` (40 pods total,
+at the established cap). **Result: 11/20 (55%) rescued to
+`CONVERGED_SANE`**, zero new timeouts across most of the batch, zero
+crashes. Staged at
+`../scratch_logs/v2_flag_completed_patterns_convprobe_rescue_v9.tsv`,
+tightest-successful-`-a` tie-break applied (same rule as
+`M14oM13uM15`). Confirmed non-monotonic per-pattern again: some need
+`a0.005` and fail at `a0.01`; others (e.g. `Under5/M7uM8/S0.057`) are
+`SANE` at `a0.01` but *time out* at `a0.005` — tighter is not
+uniformly better, consistent with everything else learned about `-a`
+this session.
+
+Of the remaining 9: 8 showed essentially **zero response** to `-a`
+tightening at all (residual magnitude unchanged to the 4th decimal
+across `0.02`/`0.01`/`0.005`) — suggesting `-a` isn't the relevant
+lever for these specifically, and mesh-shaping (`-d`/`-s`) might be,
+following the exact playbook that closed `M14oM13uM15`'s last
+holdout spacing. The 9th (`Under5/M2uM6/S0.28`) was a clean, close
+`INSANE` at `-a0.02` (magnitude 0.0004) but newly **timed out** at
+both `a0.01` and `a0.005` — worth finding the boundary rather than
+assuming tighter is safe. A 36-pod follow-up (these 9 patterns × 4
+configs: `-d0.05`, `-d0.02`, `-a0.015`, `-d0.02 -s0.01`, base flags
+`-pB128 -a0.02` otherwise) confirmed the `M14oM13uM15` lesson
+generalizes: **7 of 9 rescued**, every one of them under `-d0.02`
+(several also worked under `-d0.05`/`-d0.02 -s0.01`; `-d0.02` staged
+as the consistent tie-break winner). Only 2 remain fully resistant
+across all 4 configs — `OverUnder5/M4oM2uM5/S0.72` and
+`OverUnder5/M4oM1uM5/S1.08`, also the two largest-magnitude residuals
+in the original 20-pattern sample, so their resistance is consistent
+rather than surprising. Staged in
+`../scratch_logs/v2_flag_completed_patterns_convprobe_rescue_v10.tsv`.
+
+**Scaling the tighter-`-a` fix to the full remainder**: the other 118
+of the 138 `CONVERGED_INSANE` patterns had never been re-probed at
+all (only the 20 closest-to-sane had). Given `convtight`'s 55% hit
+rate, ran the same `-a0.01`/`-a0.005` sweep across all 118 (20 shards
+per config, ~6 patterns/shard, 40 pods). **Result: 43/118 (36%)
+rescued**, tightest-successful-`-a` tie-break applied (7 patterns had
+both configs succeed). Staged in
+`../scratch_logs/v2_flag_completed_patterns_convprobe_rescue_v11.tsv`.
+
+Of the 75 not rescued: **10 hit a timeout**, and cross-checking
+history shows **9 of these 10 are the literal same patterns from
+round 7's original 18 mesh-explosion timeouts** — cleanly fixed (no
+timeout at all) at the much looser `-a0.1` in `convloose`, but tighter
+than the original `-a0.02` (down to `0.01`/`0.005`) reproduces the
+identical runaway-mesh signature. Only 1 timeout
+(`Over5/M2oM0/S0.112`) is genuinely new. **This is a real caveat for
+this whole round's approach**: tightening `-a` to rescue weak-coupling
+sign-flip noise trades off against reintroducing mesh-explosion
+timeouts in `Under`-family patterns that a looser target had already
+resolved — for that specific family shape, only a sufficiently loose
+`-a` (around `0.1`) reliably avoids the runaway, not just "tighter
+than the original 0.02." 2 more patterns crashed
+(`Under5/M1uM3/S0.56`, `Over5/M1oM0/S0.224`, both backside) — new
+instances, but of the already-known crash-prone family population, not
+a new family (folded into `UNDERDIAG_CRASH_INVESTIGATION.md`'s tally,
+232 → 234). The remaining 63 stayed a clean, conclusive
+`CONVERGED_INSANE` under both configs, not yet tried with mesh-shaping.
+
+**Running total after this whole round-8 exploration**: 50 more
+patterns rescued (7 from `convtight2` + 43 from `convtight3`), on top
+of round 8's initial 11 (`convtight`) — bringing the non-bug-related,
+still-unconverged population down from 138 to **77** (11 rescued by
+`convtight`, 7 more by `convtight2`, 43 more by `convtight3` = 61
+total rescued this round; 138 − 61 = 77 remaining, matching the direct
+per-pattern count of unrescued patterns across all three sub-rounds).

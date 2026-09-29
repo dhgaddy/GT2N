@@ -1,0 +1,5 @@
+* 0.038x0.224x0.21um box
+* Layer of Box wire M8_w6_W0.038_T0.224_H0.21
+* face name	| four coordinates of one face
+
+Q wire_M8_w6_W0.038_T0.224_H0.21  0.0 0.0 0.0     0.038 0.0 0.0     0.038 0.0 0.21     0.0 0.0 0.21

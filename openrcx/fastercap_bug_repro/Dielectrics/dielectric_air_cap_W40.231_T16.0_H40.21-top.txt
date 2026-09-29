@@ -1,0 +1,5 @@
+* 40.231x16.0x40.21um box
+* Layer of Box Dielectric air_cap
+* face name	| four coordinates of one face
+
+Q dielectric_air_cap  0.0 16.0 0.0     40.231 16.0 0.0     40.231 16.0 40.21     0.0 16.0 40.21

@@ -1,0 +1,5 @@
+* 0.021x0.042x0.21um box
+* Layer of Box wire M5_w1
+* face name	| four coordinates of one face
+
+Q wire_M5_w1  0.0 0.042 0.0     0.021 0.042 0.0     0.021 0.042 0.21     0.0 0.042 0.21

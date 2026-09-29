@@ -2,6 +2,10 @@
 
 Working investigation log (not a validation doc, see
 `TIMING_REGRESSION_INVESTIGATION.md`'s framing for the same convention).
+**For a fix-oriented writeup — a verified standalone reproduction plus
+a concrete starting point for an actual fix — see
+`FASTERCAP_BUG_REPORT.md` instead; this document is the discovery
+narrative it was distilled from.**
 Companion to that doc's convergence-probe section: across the
 convresume/convexpand/convretry batches, 210 pattern-attempts ended in
 `stage=fastercap|rc=133` (a genuine crash, not a timeout) — 92
@@ -16,6 +20,22 @@ entire effort (all three probe/resume/expand/retry rounds combined) is
 (`rc=133`, low elapsed time, few rounds), same root cause below. No new
 family types affected; the distribution stays concentrated in
 `Under`/`UnderDiag`.
+
+**Update, round 7 (`convnc` probe, different config —
+`-pB128 -d0.1 -s0.03 -a0.02`, no `-ap`):** 5 more crashes, project-wide
+total now **232**. All 5 fit the already-known population exactly (4
+`Under5` + 1 `Over5`, both backside) — not a new family, just confirms
+this crash isn't strictly tied to the `a_0.001_ap`/`-ap` config
+specifically. See `TIMING_REGRESSION_INVESTIGATION.md`'s round 7
+section and `MESH_EXPLOSION_INVESTIGATION.md` for a different,
+mechanically distinct failure mode found in the same probe.
+
+**Update, round 8 (`convtight3`, `-a0.01`/`-a0.005` sweep on
+previously-clean-`INSANE` patterns):** 2 more crashes, total now
+**234** (`Under5/M1uM3/S0.56`, `Over5/M1oM0/S0.224`, both backside).
+Both were clean `CONVERGED_INSANE` at `-a0.02` and only crashed once
+`-a` was tightened further — a new trigger condition, but the same
+already-known crash-prone family population, not a new family.
 
 ## The question
 

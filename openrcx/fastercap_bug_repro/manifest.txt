@@ -1,0 +1,2 @@
+config=a_0.001_ap flags=[-a0.001 -ap] combo=frontside_wc5_v2 pattern=UnderDiag5/M5duM8/W0.021_W0.038/S0.042_S0.152_L10
+copied_at=2026-09-20T23:34:06+00:00

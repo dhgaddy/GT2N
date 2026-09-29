@@ -1,0 +1,5 @@
+* 40.231x0.5x40.21um box
+* Layer of Box Dielectric RDL_diel
+* face name	| four coordinates of one face
+
+Q dielectric_RDL_diel  0.0 0.5 0.0     40.231 0.5 0.0     40.231 0.5 40.21     0.0 0.5 40.21

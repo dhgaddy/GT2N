@@ -1,0 +1,101 @@
+C Wires/wire_M0_w0_W40.231_T0.1_H40.21-bottom.txt   1e-06    -20.105 -0.1 -20.0  + 
+C Wires/wire_M0_w0_W40.231_T0.1_H40.21-sides.txt   1e-06    -20.105 -0.1 -20.0  + 
+C Wires/wire_M0_w0_W40.231_T0.1_H40.21-top.txt   2.4e-06    -20.105 -0.1 -20.0 
+
+C Wires/wire_M5_w1_W0.021_T0.042_H0.21-bottom.txt   1e-06    -0.105 0.396 0.0  + 
+C Wires/wire_M5_w1_W0.021_T0.042_H0.21-sides.txt   1e-06    -0.105 0.396 0.0  + 
+C Wires/wire_M5_w1_W0.021_T0.042_H0.21-top.txt   2.4e-06    -0.105 0.396 0.0 
+
+C Wires/wire_M5_w2_W0.021_T0.042_H0.21-bottom.txt   1e-06    -0.063 0.396 0.0  + 
+C Wires/wire_M5_w2_W0.021_T0.042_H0.21-sides.txt   1e-06    -0.063 0.396 0.0  + 
+C Wires/wire_M5_w2_W0.021_T0.042_H0.21-top.txt   2.4e-06    -0.063 0.396 0.0 
+
+C Wires/wire_M5_w3_W0.021_T0.042_H0.21-bottom.txt   1e-06    0.0 0.396 0.0  + 
+C Wires/wire_M5_w3_W0.021_T0.042_H0.21-sides.txt   1e-06    0.0 0.396 0.0  + 
+C Wires/wire_M5_w3_W0.021_T0.042_H0.21-top.txt   2.4e-06    0.0 0.396 0.0 
+
+C Wires/wire_M5_w4_W0.021_T0.042_H0.21-bottom.txt   1e-06    0.063 0.396 0.0  + 
+C Wires/wire_M5_w4_W0.021_T0.042_H0.21-sides.txt   1e-06    0.063 0.396 0.0  + 
+C Wires/wire_M5_w4_W0.021_T0.042_H0.21-top.txt   2.4e-06    0.063 0.396 0.0 
+
+C Wires/wire_M5_w5_W0.021_T0.042_H0.21-bottom.txt   1e-06    0.105 0.396 0.0  + 
+C Wires/wire_M5_w5_W0.021_T0.042_H0.21-sides.txt   1e-06    0.105 0.396 0.0  + 
+C Wires/wire_M5_w5_W0.021_T0.042_H0.21-top.txt   2.4e-06    0.105 0.396 0.0 
+
+C Wires/wire_M8_w6_W0.038_T0.224_H0.21-bottom.txt   2.5e-06    0.152 0.984 0.0  + 
+C Wires/wire_M8_w6_W0.038_T0.224_H0.21-sides.txt   2.5e-06    0.152 0.984 0.0  + 
+C Wires/wire_M8_w6_W0.038_T0.224_H0.21-top.txt   2.5e-06    0.152 0.984 0.0 
+
+C Wires/wire_M8_w7_W0.038_T0.224_H0.21-bottom.txt   2.5e-06    0.228 0.984 0.0  + 
+C Wires/wire_M8_w7_W0.038_T0.224_H0.21-sides.txt   2.5e-06    0.228 0.984 0.0  + 
+C Wires/wire_M8_w7_W0.038_T0.224_H0.21-top.txt   2.5e-06    0.228 0.984 0.0 
+
+D Dielectrics/dielectric_M0_diel_W40.231_T0.048_H40.21-sides.txt   1e-06 2.4e-06   -20.105 0.0 0.0    -20.095 0.01 0.01 -  
+D Dielectrics/dielectric_M0_diel_W40.231_T0.048_H40.21-top.txt   2.4e-06 2.4e-06   -20.105 0.0 0.0    -20.095 0.01 0.01 -  
+
+
+D Dielectrics/dielectric_M1_diel_W40.231_T0.056_H40.21-sides.txt   1e-06 2.4e-06   -20.105 0.048 0.0    -20.095 0.058 0.01 -  
+D Dielectrics/dielectric_M1_diel_W40.231_T0.056_H40.21-top.txt   2.4e-06 2.4e-06   -20.105 0.048 0.0    -20.095 0.058 0.01 -  
+
+
+D Dielectrics/dielectric_M2_diel_W40.231_T0.048_H40.21-sides.txt   1e-06 2.4e-06   -20.105 0.104 0.0    -20.095 0.114 0.01 -  
+D Dielectrics/dielectric_M2_diel_W40.231_T0.048_H40.21-top.txt   2.4e-06 2.4e-06   -20.105 0.104 0.0    -20.095 0.114 0.01 -  
+
+
+D Dielectrics/dielectric_M3_diel_W40.231_T0.056_H40.21-sides.txt   1e-06 2.4e-06   -20.105 0.152 0.0    -20.095 0.162 0.01 -  
+D Dielectrics/dielectric_M3_diel_W40.231_T0.056_H40.21-top.txt   2.5e-06 2.4e-06   -20.105 0.152 0.0    -20.095 0.162 0.01 -  
+
+
+D Dielectrics/dielectric_M4_diel_W40.231_T0.084_H40.21-sides.txt   1e-06 2.5e-06   -20.105 0.208 0.0    -20.095 0.218 0.01 -  
+D Dielectrics/dielectric_M4_diel_W40.231_T0.084_H40.21-top.txt   2.5e-06 2.5e-06   -20.105 0.208 0.0    -20.095 0.218 0.01 -  
+
+
+D Dielectrics/dielectric_M5_diel_W40.231_T0.084_H40.21-sides.txt   1e-06 2.5e-06   -20.105 0.292 0.0    -20.095 0.302 0.01 -  
+D Dielectrics/dielectric_M5_diel_W40.231_T0.084_H40.21-top.txt   2.5e-06 2.5e-06   -20.105 0.292 0.0    -20.095 0.302 0.01 -  
+
+
+D Dielectrics/dielectric_M6_diel_W40.231_T0.152_H40.21-sides.txt   1e-06 2.5e-06   -20.105 0.376 0.0    -20.095 0.386 0.01 -  
+D Dielectrics/dielectric_M6_diel_W40.231_T0.152_H40.21-top.txt   2.5e-06 2.5e-06   -20.105 0.376 0.0    -20.095 0.386 0.01 -  
+
+
+D Dielectrics/dielectric_M7_diel_W40.231_T0.152_H40.21-sides.txt   1e-06 2.5e-06   -20.105 0.528 0.0    -20.095 0.538 0.01 -  
+D Dielectrics/dielectric_M7_diel_W40.231_T0.152_H40.21-top.txt   2.5e-06 2.5e-06   -20.105 0.528 0.0    -20.095 0.538 0.01 -  
+
+
+D Dielectrics/dielectric_M8_diel_W40.231_T0.152_H40.21-sides.txt   1e-06 2.5e-06   -20.105 0.68 0.0    -20.095 0.69 0.01 -  
+D Dielectrics/dielectric_M8_diel_W40.231_T0.152_H40.21-top.txt   2.5e-06 2.5e-06   -20.105 0.68 0.0    -20.095 0.69 0.01 -  
+
+
+D Dielectrics/dielectric_M9_diel_W40.231_T0.152_H40.21-sides.txt   1e-06 2.5e-06   -20.105 0.832 0.0    -20.095 0.842 0.01 -  
+D Dielectrics/dielectric_M9_diel_W40.231_T0.152_H40.21-top.txt   2.5e-06 2.5e-06   -20.105 0.832 0.0    -20.095 0.842 0.01 -  
+
+
+D Dielectrics/dielectric_M10_diel_W20.257_T0.224_H0.19-sides.txt   1e-06 2.5e-06   -20.105 0.984 0.01    -20.095 0.994 0.02 -  
+D Dielectrics/dielectric_M10_diel_W20.257_T0.224_H0.19-top.txt   2.5e-06 2.5e-06   -20.105 0.984 0.01    -20.095 0.994 0.02 -  
+D Dielectrics/dielectric_M10_diel_W40.231_T0.224_H39.98-sides.txt   1e-06 2.5e-06   -20.105 0.984 0.22    -20.095 0.994 0.23 -  
+D Dielectrics/dielectric_M10_diel_W40.231_T0.224_H39.98-top.txt   2.5e-06 2.5e-06   -20.105 0.984 0.22    -20.095 0.994 0.23 -  
+D Dielectrics/dielectric_M10_diel_W0.038_T0.224_H0.19-sides.txt   1e-06 2.5e-06   0.19 0.984 0.01    0.2 0.994 0.02 -  
+D Dielectrics/dielectric_M10_diel_W0.038_T0.224_H0.19-top.txt   2.5e-06 2.5e-06   0.19 0.984 0.01    0.2 0.994 0.02 -  
+D Dielectrics/dielectric_M10_diel_W19.86_T0.224_H0.19-sides.txt   1e-06 2.5e-06   0.266 0.984 0.01    0.276 0.994 0.02 -  
+D Dielectrics/dielectric_M10_diel_W19.86_T0.224_H0.19-top.txt   2.5e-06 2.5e-06   0.266 0.984 0.01    0.276 0.994 0.02 -  
+
+
+D Dielectrics/dielectric_M11_diel_W40.231_T0.224_H40.21-sides.txt   1e-06 2.5e-06   -20.105 1.208 0.0    -20.095 1.218 0.01 -  
+D Dielectrics/dielectric_M11_diel_W40.231_T0.224_H40.21-top.txt   2.5e-06 2.5e-06   -20.105 1.208 0.0    -20.095 1.218 0.01 -  
+
+
+D Dielectrics/dielectric_M12_diel_W40.231_T0.224_H40.21-sides.txt   1e-06 2.5e-06   -20.105 1.432 0.0    -20.095 1.442 0.01 -  
+D Dielectrics/dielectric_M12_diel_W40.231_T0.224_H40.21-top.txt   2.5e-06 2.5e-06   -20.105 1.432 0.0    -20.095 1.442 0.01 -  
+
+
+D Dielectrics/dielectric_M13_diel_W40.231_T0.224_H40.21-sides.txt   1e-06 2.5e-06   -20.105 1.656 0.0    -20.095 1.666 0.01 -  
+D Dielectrics/dielectric_M13_diel_W40.231_T0.224_H40.21-top.txt   2.5e-06 2.5e-06   -20.105 1.656 0.0    -20.095 1.666 0.01 -  
+
+
+D Dielectrics/dielectric_RDL_diel_W40.231_T0.5_H40.21-sides.txt   1e-06 2.5e-06   -20.105 1.88 0.0    -20.095 1.89 0.01 -  
+D Dielectrics/dielectric_RDL_diel_W40.231_T0.5_H40.21-top.txt   1e-06 2.5e-06   -20.105 1.88 0.0    -20.095 1.89 0.01 -  
+
+
+D Dielectrics/dielectric_air_cap_W40.231_T16.0_H40.21-sides.txt   1e-06 1e-06   -20.105 2.38 0.0    -20.095 2.39 0.01 -  
+
+

@@ -1,0 +1,8 @@
+* 40.231x0.152x40.21um box
+* Layer of Box Dielectric M8_diel
+* face name	| four coordinates of one face
+
+Q dielectric_M8_diel  0.0 0.0 0.0     0.0 0.152 0.0     40.231 0.152 0.0     40.231 0.0 0.0
+Q dielectric_M8_diel  0.0 0.0 0.0     0.0 0.0 40.21     0.0 0.152 40.21     0.0 0.152 0.0
+Q dielectric_M8_diel  40.231 0.0 0.0     40.231 0.0 40.21     40.231 0.152 40.21     40.231 0.152 0.0
+Q dielectric_M8_diel  0.0 0.0 40.21     0.0 0.152 40.21     40.231 0.152 40.21     40.231 0.0 40.21

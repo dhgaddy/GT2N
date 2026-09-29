@@ -1,0 +1,5 @@
+* 40.231x0.224x39.98um box
+* Layer of Box Dielectric M10_diel
+* face name	| four coordinates of one face
+
+Q dielectric_M10_diel  0.0 0.224 0.0     40.231 0.224 0.0     40.231 0.224 39.98     0.0 0.224 39.98
