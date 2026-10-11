@@ -63,7 +63,7 @@ counted and reported separately.
 Usage: python3 build_combined_caps.py
 Reads (relative to scratch_logs/): v2_flag_completed_patterns.tsv,
 v2_flag_completed_patterns_RDL_bonus.tsv,
-v2_flag_completed_patterns_convprobe_rescue{,_v2..v11}.tsv
+v2_flag_completed_patterns_convprobe_rescue{,_v2..v14}.tsv
 Writes: gt2n_frontside.caps, gt2n_backside.caps (in the current dir)
 """
 import re
@@ -84,6 +84,9 @@ SOURCES = [
     f"{SCRATCH}/v2_flag_completed_patterns_convprobe_rescue_v9.tsv",
     f"{SCRATCH}/v2_flag_completed_patterns_convprobe_rescue_v10.tsv",
     f"{SCRATCH}/v2_flag_completed_patterns_convprobe_rescue_v11.tsv",
+    f"{SCRATCH}/v2_flag_completed_patterns_convprobe_rescue_v12.tsv",
+    f"{SCRATCH}/v2_flag_completed_patterns_convprobe_rescue_v13.tsv",
+    f"{SCRATCH}/v2_flag_completed_patterns_convprobe_rescue_v14.tsv",
 ]
 
 METAL_RE = re.compile(r"Metal\s")
