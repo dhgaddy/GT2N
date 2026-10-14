@@ -103,6 +103,21 @@ own `.pro` file, own pattern generation, own FasterCap runs, and own
 assembly stage (Stage 7) — see the layer-numbering note there, which is
 the main complication this split introduces.
 
+Don't be misled by one stack's own `.pro` file into thinking its
+closest-to-device conductor is lightly separated from the other
+stack's closest-to-device conductor — check the full combined ITF/ICT
+source, not just the per-stack `.pro` file, for what actually
+intervenes. On GT2N, each `.pro` file's `distance`/`_diel` fields only
+describe that stack's own internal layer-to-layer gaps; the real
+frontside-to-backside separation (confirmed by reading the full
+`nxtgrd/GT2.itf`, not either `.pro` file alone) is the entire
+transistor/MOL level plus a standalone buried-oxide dielectric with no
+conductor of its own — not a simple dielectric gap between the two
+stacks' nearest metal layers. Confirm this for any new BSPDN process
+before assuming the two stacks can be merged into one physically
+continuous description; GT2N's `TIMING_REGRESSION_INVESTIGATION.md`
+("Cross-stack gap" section) has the full writeup.
+
 ## Stage 2 — Pattern generation
 
 ```
@@ -138,14 +153,20 @@ depth matters for Stage 3's converter (see its hardcoded-path gotcha).
 
 FasterCap is a boundary-element (field-solver) capacitance extraction tool
 — the reference solver OpenRCX's own calibration flow (`src/rcx/calibration/
-fasterCap/` in the OpenROAD source tree) is built around. Two forks exist:
-`ediloren/FasterCap` (upstream original) and `george-goudroumanis/
-FasterCAP_v2`. Neither is a strictly safer default — evaluate both if
-runtime/memory cost matters. On GT2N's dataset, the two forks agreed within
-~5-6% on capacitance once each fork's own known bugs (below) were
-controlled for; the real, confirmed difference between them was resource
-cost (memory could differ by multiple orders of magnitude on the same
-pattern in either direction), not accuracy.
+fasterCap/` in the OpenROAD source tree) is built around. Two forks were
+evaluated early on: `ediloren/FasterCap` (upstream original) and
+`george-goudroumanis/FasterCAP_v2`. On GT2N's dataset, the two forks
+agreed within ~5-6% on capacitance once each fork's own known bugs (below)
+were controlled for; the real, confirmed difference between them was
+resource cost (memory could differ by multiple orders of magnitude on the
+same pattern in either direction), not accuracy. **This project now uses
+only `ediloren/FasterCap` (specifically `dgaddy/FasterCap`, a local fork
+of it at `/home/dgaddy/research/fastercap-fork`) — `FasterCAP_v2` is no
+longer in active use.** References elsewhere in this doc set to
+`FasterCAP_v2`/`fastercap-v2-fork` describe work done before that
+decision; the underlying solver bugs they document (confirmed via direct
+source comparison — both forks share identical code at the relevant
+crash sites) still apply to the fork now in use.
 
 ### Build
 
@@ -464,6 +485,37 @@ one `read_rcx_tables -corner_name <corner> -file <caps> -wire_index <N>
 - **`family`** is one of `over`/`under`/`over_under`/`diag` — read each
   one that has data; there is no cost to reading a family with zero
   matching lines in a given `.caps` file.
+- **This whole `read_rcx_tables -wire_index N -<family>` ingestion path
+  is a different, less-trodden one than OpenRCX's own documented
+  calibration flow — and it doesn't fully keep multiple wire-counts
+  separate when you feed more than one into the same family.**
+  `doc/calibration.md` describes the "official" flow: a reference
+  extractor (not FasterCap) produces a `.spef`, which `bench_read_spef`
+  + `write_rules` convert into the rules file — no `wire_index`
+  involved at all. There's a real FasterCap-based path
+  (`calibration/fasterCap/scripts/`), but even its own reference
+  example (`create_rcx_model_gen_tcl_script.bash`) reads a single
+  `-wire 3` once, not multiple wire-counts combined. GT2N's choice to
+  feed wire_index 1, 2, *and* 3 into every family (reasonable — see
+  the `-wire_cnt` row below) goes beyond anything tested in the tree.
+  Concretely: `extMetRCTable::allocOverTable` allocates a *separate*
+  table per wire-count for the isolated/one-side-open variants
+  (`_capOver_open[met][ii]`), but the **fully-coupled** bucket
+  (`_capOver[met]`/`_capUnder[met]`) has no such separation — wc3 and
+  wc5 both land there — and `allocDiagUnderTable`'s `_capDiagUnder[met]`
+  has no separation at all (wc1/2/3/5 all share it). All of these feed
+  the same flat measurement list (`extDistRCTable::addMeasureRC`,
+  keyed only by `(met, width[, diagWidth])`), walked positionally by
+  the lookup (`getRC`/`getComputeRC`) with no wire-count-aware
+  filtering anywhere. Checked on real data: fully-coupled `Under3`/
+  `Under5` (non-diag, not blacked) share an identical spacing point
+  with different values for `M4uM8`; diag's `UnderDiag2`/`3`/`5` do the
+  same for `M10duM11`. If building a new process's model and you plan
+  to combine multiple wire-counts the way GT2N does, budget real
+  scrutiny here — this architecture's silent pooling won't surface the
+  gap on its own, and it isn't a documented/validated use of the tool.
+  See `TIMING_REGRESSION_INVESTIGATION.md`'s "What the flow falls
+  back to" section for the traced mechanism and worked examples.
 
 Sanity-check the assembled model against a real routed design before
 trusting it in production: load it via `set_extraction_rules_file` and
@@ -506,7 +558,7 @@ resistance data.
 |---|---|---|
 | Topside capping dielectric epsilon/thickness | `.pro` file | Use the PDK's own field-solver background-dielectric value if documented; a generous multiple of the top layer's min geometry for thickness |
 | `-wire_cnt` sweep coverage | `gen_solver_patterns` | Skipping `wire_cnt=5` loses all dense-packing (`wire_index=3`) data — usually not acceptable for real digital routing |
-| `-over_dist`/`-under_dist` | `gen_solver_patterns` | Tool default (4) may disproportionately involve an unusual top-of-stack layer; check before accepting the default blindly |
+| `-over_dist`/`-under_dist` | `gen_solver_patterns` | Tool default (4) may disproportionately involve an unusual top-of-stack layer; check before accepting the default blindly. On GT2N this was checked specifically for the frontside/backside boundary: the resulting empty cross-stack entries are physically correct (two field-solver domains with no directly-coupled conductor between them, not a gap) — see `TIMING_REGRESSION_INVESTIGATION.md`'s "Cross-stack gap" section |
 | FasterCap solver flags | Stage 3 | `-g -ap` as a strong default; everything else situational |
 | Auto-refine round cap | Stage 3 (solver build) | Source-level `#define`, not exposed as a flag — raise it if hard patterns need it, at the cost of runtime only on patterns that need the extra rounds |
 | Memory tier ceilings | Stage 4 (cluster job sizing) | Empirical, from direct probing — not derivable from pattern name alone |

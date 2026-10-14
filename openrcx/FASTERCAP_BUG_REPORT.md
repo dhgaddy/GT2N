@@ -9,19 +9,23 @@ without reading that history first.
 
 ## Summary
 
-FasterCap (the `FasterCap_v2` fork at
-`fastercap-v2-fork/FasterCap_v2` / `FasterCAP_v2/FasterCap_v2`, byte-
-identical at the relevant files) crashes with `SIGTRAP` (exit code
-133 under `/usr/bin/time`) on a specific, reproducible class of input
-geometry: patterns where a reference conductor has a coupling
-neighbor *below* it only (this project's `Under5`/`UnderDiag3`/
-`UnderDiag5` pattern families), almost never on patterns with a
-neighbor *above* or on both sides (`Over*`/`OverUnder*`). Confirmed
-across 232 real pattern-attempts in production use (this project's
-FasterCap-based OpenRCX calibration pipeline, across multiple
-different `-a`/preconditioner configs — not specific to one flag
-combination); see `UNDERDIAG_CRASH_INVESTIGATION.md` for the full
-family/geometry breakdown.
+FasterCap crashes with `SIGTRAP` (exit code 133 under `/usr/bin/time`)
+on a specific, reproducible class of input geometry: patterns where a
+reference conductor has a coupling neighbor *below* it only (this
+project's `Under5`/`UnderDiag3`/`UnderDiag5` pattern families), almost
+never on patterns with a neighbor *above* or on both sides
+(`Over*`/`OverUnder*`). Confirmed across 235 real pattern-attempts in
+production use as of 2026-09 (this project's FasterCap-based OpenRCX
+calibration pipeline, across multiple different `-a`/preconditioner
+configs — not specific to one flag combination); see
+`UNDERDIAG_CRASH_INVESTIGATION.md` for the full family/geometry
+breakdown. Originally diagnosed against the `FasterCAP_v2` fork
+(`fastercap-v2-fork/FasterCap_v2` / `FasterCAP_v2/FasterCap_v2`,
+byte-identical at the relevant files); this project has since moved to
+using only `ediloren/FasterCap` (`fastercap-fork`, a.k.a.
+`dgaddy/FasterCap`) — the crash mechanism is confirmed identical in
+that fork too (see "Verified against" below), so this report's
+findings and the fix-starter guidance apply there without change.
 
 The crash is a deliberate `wxASSERT` trap (not a segfault, not an
 unhandled exception) firing because a computed potential or
@@ -45,6 +49,19 @@ FasterCap -b wires.lst -g -a0.001 -ap
 **Verified against a locally-built `FasterCap_v2` binary
 (`FasterCAP_v2/build/FasterCap`, version 6.0.7 per its own banner) —
 reproduces on every run, crashes within ~1-25 seconds, exit code 133.**
+Not yet re-run as an actual reproduction against `fastercap-fork` (the
+fork now in use), but confirmed via direct source diff that the
+relevant solver code (`Autorefine.cpp`, `MultiplyHierarchical.cpp`,
+including the exact `ASSERT` lines this bug fires on) is unchanged
+between the two forks — the repro steps below should be expected to
+reproduce there too; re-running this repro against `fastercap-fork`'s
+own build to confirm directly is still worth doing before relying on
+this report exclusively for that fork. Note also that `fastercap-fork`
+already carries one relevant, real fix on top of stock `ediloren/
+FasterCap` (commit `d3e3b2c`, "Fix silent success on auto-refinement
+(-a) non-convergence") — unrelated to this specific crash (a different
+non-convergence failure mode, not a `SIGTRAP`), but worth knowing about
+if investigating convergence behavior on this fork going forward.
 The `Wires/`/`Dielectrics/` geometry files in that directory are a mix
 of originals (pulled from this project's saved crash artifacts) and a
 handful reconstructed by hand from the project's own simple box-panel
@@ -171,12 +188,24 @@ output).
   independent bugs).
 - One of the two sites already has unreachable graceful-degradation
   code — a concrete, low-risk starting point for a fix.
-- Not fixable by any FasterCap command-line flag — 30 distinct
-  configurations tried in production use, none avoided it.
+- Not fixable by any FasterCap command-line flag — over 35 distinct
+  configurations tried in production use as of 2026-09 (the original
+  30-config sweep plus several more `-a`/mesh-shaping variants tried
+  in later rounds), none avoided it.
 - Family-shape correlation: essentially exclusive to `Under`-type
   geometry (reference conductor with a coupling neighbor below only),
   vs. `Over`/`OverUnder` (neighbor above, or both sides), which
-  crashes almost never (2 stray exceptions out of 210+ occurrences).
+  crashes almost never (7 unique `Under5`/`Over5` exceptions out of
+  160 unique crash-bug-affected patterns project-wide, 235
+  pattern-attempts across all rounds). **Note (2026-10-08):** a later,
+  independent non-RDL-only reconciliation (see
+  `scratch_logs/FASTERCAP_FINDINGS.md`'s correction note) puts this
+  crash-bug family at 162 non-RDL patterns, out of a 175-pattern total
+  still-missing population (the other 13 are unattributed, not part of
+  this bug). The 160 here and the 162 there are close but not
+  guaranteed to be the exact same denominator (this 160 is
+  project-wide as of round 9/2026-09-29, while 162 is non-RDL-only as
+  of 2026-10-08), so don't assume they reconcile to the decimal.
 
 **Still open** (see `UNDERDIAG_CRASH_INVESTIGATION.md` for what's been
 ruled out so far — zero-diagonal-spacing and layer-separation distance
@@ -204,6 +233,7 @@ were both tested and rejected as the primary driver):
   (`wires.lst` + `Wires/` + `Dielectrics/`, run with `FasterCap -b
   wires.lst -g -a0.001 -ap`).
 - `openrcx/UNDERDIAG_CRASH_INVESTIGATION.md` — the full investigation
-  log: family/geometry statistics across 227 real occurrences, the two
-  hypotheses tested and ruled out, and how this crash relates to the
-  broader convergence-probe rescue effort.
+  log: family/geometry statistics (235 pattern-attempts / 160 unique
+  patterns as of 2026-09-29), the two hypotheses tested and ruled out,
+  and how this crash relates to the broader convergence-probe rescue
+  effort.

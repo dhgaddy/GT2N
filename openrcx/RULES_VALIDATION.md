@@ -29,6 +29,18 @@ Combined across non-RDL and RDL/BRDL (v2-scoped) patterns — i.e. the
 full set of patterns that actually feed `gt2n_{frontside,backside}.caps`
 today via `build_combined_caps.py`.
 
+**Flag (2026-10-08):** the per-family table and the "Non-RDL" row of
+the split-by-scope table below were last regenerated before the
+convprobe-rescue rounds (`scratch_logs/v2_flag_completed_patterns_convprobe_rescue.tsv`
+through `_v14.tsv`) ran, so the per-family breakdown below is now stale
+on the non-RDL side and has NOT been re-derived at this per-family
+granularity in the 2026-10-08 reconciliation. The reconciled non-RDL
+totals (5,953 converged / 175 missing out of 6,128, see
+`scratch_logs/FASTERCAP_FINDINGS.md`'s correction note) are verified;
+this table's per-family split of those numbers is not, so treat the
+numbers below as a dated historical snapshot, not current, until this
+table is regenerated against the 16 source TSVs.
+
 | Family | Converged (CONVERGED_SANE) | Confirmed unconvergeable | Total attempted | % Converged |
 |---|---|---|---|---|
 | Over | 1,142 | 218 | 1,360 | 84.0% |
@@ -37,29 +49,48 @@ today via `build_combined_caps.py`.
 | UnderDiag | 1,537 | 255 | 1,792 | 85.8% |
 | **TOTAL** | **6,012** | **1,044** | **7,056** | **85.2%** |
 
-Split by scope, for context:
+Split by scope, for context (non-RDL row below is the pre-convprobe-
+rescue snapshot, see the flag above and the corrected totals in
+`openrcx/README.md`'s "Status update" section):
 
 | Scope | Converged | Confirmed unconvergeable | Total | % Converged |
 |---|---|---|---|---|
-| Non-RDL (main v2 scope) | 5,230 | 898 | 6,128 | 85.3% |
-| RDL/BRDL (v2-scoped) | 782 | 146 | 928 | 84.3% |
+| Non-RDL (main v2 scope), snapshot before convprobe-rescue | 5,230 | 898 | 6,128 | 85.3% |
+| Non-RDL (main v2 scope), **corrected 2026-10-08** | **5,953** | n/a (175 missing: 172 no verdict, 3 CONVERGED_INSANE) | 6,128 | 97.1% |
+| RDL/BRDL (v2-scoped), snapshot before later convprobe-rescue rounds | 782 | 146 | 928 | 84.3% |
+| RDL/BRDL (v2-scoped), **corrected 2026-10-14** | **923** | **5** | 928 | 99.46% |
 
 **Every RDL/BRDL pattern in the true v2-scoped universe has been
-attempted.** The canonical universe (deduped (stack, wc, pattern)
-triples from `all_patterns_v2.txt`) is **928** unique patterns, matching
-782 + 146 = 928 exactly, zero remaining. The 1 confirmed-unconvergeable
-RDL pattern was escalated through the full 3-config experimental round
-and 7-config D-bracket round, failing identically at every tier (same
-negative-FR/CC2 signature as the non-RDL failures).
+attempted**, confirmed correct, just with a stale split: the 782/146
+row only counted `v2_flag_completed_patterns_RDL_bonus.tsv`, missing
+141 RDL patterns that the later convprobe-rescue rounds (v2-v14)
+rescued incidentally alongside the non-RDL work, same root cause as
+the non-RDL staleness corrected above. Re-scanned every source TSV
+directly (not just the RDL-labeled file) for the 2026-10-14 row. The
+canonical universe (deduped (stack, wc, pattern) triples from
+`all_patterns_v2.txt`, cross-checked: 928 + the non-RDL 6,128 = 7,056,
+the master file's exact total) is **928** unique patterns, zero
+untouched either way. `openrcx/README.md` is the current source of
+truth for this figure going forward.
 
 ## 2. Patterns that never converged sane
+
+**Corrected 2026-10-08:** this section (table and counts below) is the
+pre-convprobe-rescue snapshot. On the non-RDL side, most of this
+population was later rescued by `scratch_logs/v2_flag_completed_patterns_convprobe_rescue.tsv`
+through `_v14.tsv`, so the current non-RDL missing count is **175**, not
+898 (see `openrcx/README.md` and `scratch_logs/FASTERCAP_FINDINGS.md`'s
+correction note). The table below has not been regenerated at this
+per-family granularity against the current, reconciled data, so treat
+it as historical (what the escalation pipeline had confirmed as of
+2026-09, before the convprobe-rescue rounds), not current.
 
 These are not "not yet tried" — every one of these was run through the
 full escalation pipeline (nonstop auto-refine → 3-config experimental
 round → 7-config D-bracket round) and still produced a negative
-CC/FR/TC/CC2 on every attempt.
+CC/FR/TC/CC2 on every attempt, as of that 2026-09 snapshot.
 
-| Family | Confirmed unconvergeable | % of that family's attempts |
+| Family | Confirmed unconvergeable (2026-09 snapshot) | % of that family's attempts |
 |---|---|---|
 | OverUnder | 467 | 16.2% |
 | UnderDiag | 255 | 14.2% |
@@ -71,7 +102,8 @@ CC/FR/TC/CC2 on every attempt.
 FastCap solver-precision limitation on weak/long-range coupling terms
 — reproduced directly against raw solver output. See
 `scratch_logs/FASTERCAP_FINDINGS.md`, "Root-caused the negative-FR/
-negative-CC2 residual" section, for the full investigation. Practical
+negative-CC2 residual" section (and its 2026-10-08 correction note
+right after it), for the full investigation. Practical
 effect on the rules file: these specific (family, width, spacing)
 combinations have no real measured point in `gt2n_{frontside,
 backside}.caps`; OpenRCX's own interpolation across the surrounding

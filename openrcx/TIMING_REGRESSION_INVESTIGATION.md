@@ -150,6 +150,61 @@ If prioritizing re-convergence effort (get at least one real point per
 group instead of zero), M5/M7/M11/M12's `Over`/`OverUnder`/`UnderDiag`
 families cover the large majority of the 102 groups.
 
+## Cross-stack (frontside/backside boundary) gap: investigated and closed, not a defect
+
+Separate question from the convergence-failure gaps above: the rules
+file also has a block of `OVER`/`UNDER`/`OVERUNDER` entries (plain and
+both `0`/`1` open-ended variants) with `DIST count 0` — or, for `Metal
+6 UNDER`, no `DIST` section at all — every time the pair spans the
+backside/frontside boundary (real layer 6/`BPR` vs. real layer 7/`M0`)
+within `gen_solver_patterns`' `-over_dist`/`-under_dist` window
+(default 4, confirmed via grep that GT2N never passes this flag
+explicitly anywhere — every sweep/`gen.tcl` and k8s entrypoint script
+relies on the tool default). Programmatically enumerating every such
+header in `gt2n_combined.rcx.model` (gap 1-4, either direction, all
+three families including the `0`/`1` variants) found **every single
+one unpopulated, no exceptions** — 29 `OVER`-direction combos, 31
+`UNDER`-direction combos, 510 `OVERUNDER`-direction combos.
+
+**Initial hypothesis (wrong): a real, consequential physical gap that
+should be filled.** `gt2n_process_backside.pro`'s `CONDUCTOR BPR`
+block lists `distance 0.090`, which was first read as the real
+physical separation between `BPR` (backside, closest to devices) and
+`M0` (frontside, closest to devices) — small enough to plausibly
+matter, and `gen_solver_patterns`' default-4 window was confirmed to
+be an unexamined tool default rather than a deliberate PDK-informed
+choice, so this looked like a genuine, previously-unnoticed model gap
+worth closing by building a combined process file and generating the
+missing cross-stack patterns.
+
+**Correction, found by reading the full `nxtgrd/GT2.itf`** (the single
+continuous source both `.pro` files are independently derived from,
+rather than just each `.pro` file in isolation): `BPR_diel`'s
+`0.090` is the ILD **beneath** `BPR` (per the established `<L>_diel`
+convention, the gap down to `BM1`), not the gap up toward the
+frontside. The real separation between `M0` and `BPR` in the
+continuous ITF listing is the **entire transistor/MOL level**
+(`GATE`/`ACT`/`SDCON`/`VSD`/`VG` — already out of scope for wire-RC
+extraction per both `.pro` files' own header comments) **plus
+`BOX_diel`** (23nm buried oxide, the wafer-thinning remnant;
+`gt2n_process_backside.pro`'s header comment already flags this as
+having "no CONDUCTOR of its own" and not belonging to either stack).
+That's a structurally different, much bigger thing than a simple
+dielectric gap between two metal stacks — modeling it honestly would
+require representing several additional conductor layers this project
+has always treated as out of scope, not just adding one dielectric
+entry to a merged process file.
+
+**Conclusion**: the frontside and backside metal stacks are genuinely
+separate field-solver domains with no directly-coupled conductor
+across the boundary — exactly what `HOWTO.md`'s "Frontside/backside
+split" note already documents (each stack solved independently,
+combined only at final rules-file assembly). The empty cross-stack
+entries are a correct reflection of that physical reality, not an
+overlooked default or a defect. **No combined process file or
+cross-stack pattern generation is planned** — this line of
+investigation is closed.
+
 ## What the flow falls back to when there's nothing to interpolate between
 
 Traced the actual call chain in `openroad-fork/src/rcx/src/
@@ -191,6 +246,94 @@ geometry class (`OverUnder5`/dense-packing, M5/M7/M11/M12) expected to
 have the largest coupling terms in the first place. This is a distinct
 mechanism from the `S==W` calibration-bias story above, not a
 replacement for it — both could be contributing simultaneously.
+
+**Correction (this doc previously understated this): the wire-count
+pooling problem is not unique to the diag family — it's a general gap
+in the model, worst in diag, present everywhere else too.** Traced the
+actual ingestion routing (`extMetRCTable::addRCw`, the function
+GT2N's model-build step calls per raw `.caps` line — not the
+superficially similar `extRCModel::addRC`, a different/legacy code
+path):
+
+```cpp
+} else if (m->_over) {
+    if (m->_open)       table = _capOver_open[m->_met][0];  // wc1 (isolated) — own table
+    else if (m->_over1) table = _capOver_open[m->_met][1];  // wc2 (one-side-open) — own table
+    else                table = _capOver[m->_met];          // wc3 AND wc5 — SAME table
+} else if (m->_diag) {
+    table = _capDiagUnder[m->_met];   // wc1, wc2, wc3, wc5 — ALL the same table, no branching
+}
+```
+
+`OVER`/`UNDER`/`OVERUNDER` genuinely keep wc1 and wc2 in their own
+dedicated tables (`_capOver_open[met][0]`/`[1]`) — a wc3/wc5
+(fully-coupled) lookup against an empty fully-coupled bucket correctly
+falls through to the silent-zero path documented above, and isolated
+data never contaminates that lookup. **But wc3 and wc5 — "fully
+coupled, 3 wires" and "fully coupled, 5 wires" — land in the exact
+same `_capOver[met]`/`_capUnder[met]` table**, same mechanism as diag.
+Confirmed directly: `Under3/M4uM8` and `Under5/M4uM8` (real layers
+10/14, not a diag pair, not blacked) both have raw rows at the
+identical spacing `S0.014` with different `CC` values (`0.008195` for
+wc3; `0.008526`/`0.015425`/`0.012833`/`0.015494`/`0.008726` for wc5's
+five replicas) — all appended to the same measurement list.
+
+**The diag family's issue is the same defect, just total instead of
+partial**: `extMetRCTable::allocDiagUnderTable` allocates
+`_capDiagUnder[met]` as a single table with no per-wire-count array at
+all (contrast `_capOver_open[met][ii]` above), and `addRCw`'s diag
+branch has no `_open`/`_over1` sub-routing — wc1, wc2, wc3, *and* wc5
+all land in the one table. Confirmed on `M10duM11` (real layers 16/17,
+fully converged, not blacked): `UnderDiag2`/`3`/`5` all land on the
+identical `DiagDist 0.112, DiagWidth 0.056` point with different
+`DiagCC` values (0.0057/0.0048 for wc2; 0.0034/0.0043/0.0043 for wc3;
+0.0015/0.0027/0.0038/0.0032/0.0027 for wc5) — all in the same flat
+list, which `getRC`/`getComputeRC` walks positionally (`getLast()`,
+`get(cnt-2)`, etc.), not by any wire-count-aware key.
+
+**Net picture**: every family pools wc3 with wc5. Diag additionally
+pools wc1 and wc2 into that same list — a much bigger context gap
+(isolated, zero neighbors, vs. dense-packed, up to 5), which is why the
+14 still-100%-blacked diag groups look the way they do: `frontside
+UnderDiag3 M7duM8` / `UnderDiag5 M7duM8` (real layers 13/14) have zero
+raw rows in `gt2n_frontside.caps`, yet the committed `Metal 13
+DIAGUNDER 14` header has 120 real rows — entirely from the surviving
+`UnderDiag1`/`UnderDiag2` (isolated/one-side-open) data. For
+`OVER`/`UNDER`/`OVERUNDER`, the equivalent worst case (wc3 *and* wc5
+both empty for some pair) genuinely hits the silent-zero path — none
+of those currently exist in the committed model (verified: no
+in-window, same-stack `OVER`/`UNDER`/`OVERUNDER` header has
+`DIST count 0`) — but a *partial* version of the same contamination
+(wc3 present, wc5 missing or vice versa, silently backfilling each
+other) is architecturally possible anywhere in those families too; it
+just hasn't been specifically surveyed the way the diag family has.
+
+**Correction: the wc3/wc5 pooling is not "relatively mild."** Tracing
+`extDistRCTable::interpolate()`/`getComputeRC()` further (not just the
+storage layer) found this pooling can silently corrupt real-extraction
+lookups outright, independent of how close wc3's and wc5's values
+happen to be: raw measurements land in `measureTable_` in file-read
+order, not distance order, and multiple downstream functions
+(`mapInterpolate`'s per-pair walk, `mapExtrapolate`'s
+flat-extrapolation-from-`get(0)`, `getComputeRC`'s
+near-farthest-point special case via `getLast()`) all assume that
+order is sorted ascending by distance. When wc3's sweep ends above
+wc5's sweep's own starting point, that assumption breaks, and a
+real query can return an arbitrary wrong constant (not an average of
+wc3/wc5, not a zero) — confirmed with a minimal reproduction,
+independent of GT2N's actual calibration values. **This is now fixed**
+(sort `measureTable_` by distance before building `computeTable_`,
+a localized change to one function, validated with a dedicated
+regression test that fails without the fix and passes with it) — see
+`openroad-fork/src/rcx/doc/wire_count_pooling_fixes.md` for the full
+fix-tracking doc. **The diag open/coupled split described above is
+also now fixed** — `diag` has its own `_capDiagUnder_open[met][0]`/`[1]`
+tables now, mirroring `OVER`/`UNDER`, validated with a dedicated test
+(`TestDiagOpenSplit.cpp`). Both fixes are local-fork changes only (not
+upstreamed); the diag family's *runtime lookup* still doesn't do the
+distance-weighted open/coupled blend `OVER`/`UNDER` use — only the
+storage side no longer pools incompatible wire-counts — see the
+fix-tracking doc's "Fix 2" section for exactly what's deferred.
 
 ## Fork results: 3 of 8 designs confirmed, mesh/thick-metal hypothesis further refuted
 
@@ -242,6 +385,95 @@ diagnosing why the isolated worktree missed cache (expected to be a
 cache hit, per the original sweep's build having already produced
 these exact artifacts) or accepting a real multi-hour rebuild. Not
 attempted further without checking in first, given the cost.
+
+## Current state, all families, project-wide (verified 2026-10-01, after round 12 — unchanged since round 11, round 12 rescued 0)
+
+Computed directly from the master tracker files
+(`../scratch_logs/v2_flag_completed_patterns.tsv` +
+`_RDL_bonus.tsv` for originally-SANE patterns,
+`../scratch_logs/insane_converged_patterns_queue.tsv` + `_RDL.tsv` for
+the originally-failing universe, cross-referenced against all 14
+staged rescue TSVs and every k8s probe's raw per-pattern records from
+this session — rebuilt from source each time, never extended from a
+prior round's arithmetic) — 7056 patterns total, 6017 originally SANE,
+1039 originally failing. 864 of those 1039 have since been rescued
+across 14 rounds (670 in an earlier session, 194 in this one). Two
+patterns (`frontside/OverUnder5/M5oM2uM6/.../S0.021_S0.021_L10` and
+`frontside/Over5/M5oM3/.../S0.063_S0.063_L10`, both `wc5`) were rescued
+(rounds 8 and 9 respectively) but were never present in
+`insane_converged_patterns_queue.tsv` to begin with — a small, known
+gap in that master file, noted here rather than silently absorbed into
+the totals.
+
+| stack | family | total | SANE | SANE% | crash-bug | mesh-explosion timeout | clean INSANE |
+|---|---|---|---|---|---|---|---|
+| backside | Over1 | 20 | 20 | 100% | - | - | - |
+| backside | Over2 | 100 | 100 | 100% | - | - | - |
+| backside | Over3 | 100 | 100 | 100% | - | - | - |
+| backside | Over5 | 100 | 99 | 99.0% | 1 | 0 | 0 |
+| backside | OverUnder1 | 20 | 20 | 100% | - | - | - |
+| backside | OverUnder2 | 100 | 100 | 100% | - | - | - |
+| backside | OverUnder3 | 100 | 100 | 100% | - | - | - |
+| backside | OverUnder5 | 100 | 90 | 90.0% | 0 | 1 | 9 |
+| backside | Under1 | 14 | 14 | 100% | - | - | - |
+| backside | Under2 | 70 | 70 | 100% | - | - | - |
+| backside | Under3 | 70 | 70 | 100% | - | - | - |
+| backside | Under5 | 70 | 61 | 87.1% | 6 | 1 | 2 |
+| backside | UnderDiag1 | 14 | 14 | 100% | - | - | - |
+| backside | UnderDiag2 | 126 | 126 | 100% | - | - | - |
+| backside | UnderDiag3 | 126 | 126 | 100% | - | - | - |
+| backside | UnderDiag5 | 126 | 110 | 87.3% | 16 | 0 | 0 |
+| frontside | Over1 | 65 | 65 | 100% | - | - | - |
+| frontside | Over2 | 325 | 325 | 100% | - | - | - |
+| frontside | Over3 | 325 | 325 | 100% | - | - | - |
+| frontside | Over5 | 325 | 325 | 100% | - | - | - |
+| frontside | OverUnder1 | 160 | 160 | 100% | - | - | - |
+| frontside | OverUnder2 | 800 | 800 | 100% | - | - | - |
+| frontside | OverUnder3 | 800 | 799 | 99.9% | 0 | 0 | 1 |
+| frontside | OverUnder5 | 800 | 797 | 99.6% | 0 | 0 | 3 |
+| frontside | Under1 | 50 | 50 | 100% | - | - | - |
+| frontside | Under2 | 250 | 250 | 100% | - | - | - |
+| frontside | Under3 | 250 | 250 | 100% | - | - | - |
+| frontside | Under5 | 250 | 250 | 100% | - | - | - |
+| frontside | UnderDiag1 | 50 | 50 | 100% | - | - | - |
+| frontside | UnderDiag2 | 450 | 450 | 100% | - | - | - |
+| frontside | UnderDiag3 | 450 | 375 | 83.3% | 75 | 0 | 0 |
+| frontside | UnderDiag5 | 450 | 388 | 86.2% | 62 | 0 | 0 |
+| **TOTAL** | | **7056** | **6879** | **97.5%** | **160** | **2** | **15** |
+
+`crash-bug` = confirmed `rc=133` SIGTRAP hits (either the pattern's
+family is `UnderDiag*`, or it was directly observed to crash in one of
+this session's probes even though its family normally doesn't — 7
+`Under5`/`Over5` patterns fall in the latter bucket). `mesh-explosion
+timeout` = the runaway-panel-refinement failure mode
+(`MESH_EXPLOSION_INVESTIGATION.md`), confirmed via direct observation
+in this session's probes, not inferred. `clean INSANE` = a real,
+conclusive `CONVERGED_INSANE` verdict under every config tried so far
+— not a bug, not yet rescued. 160 + 2 + 15 = 177 patterns remain
+non-SANE; 17 of those (2 + 15) are unrelated to the crash bug and are
+this project's current active investigation target.
+
+Every other table and count in this document below reflects the
+scope and point in time it was measured at (labeled per round) — at the
+time this section was written (2026-10-01, after round 12), it was the
+current authoritative cross-check, with the round tables below it
+superseded by it.
+
+**Flag (2026-10-08):** this section is itself now superseded. Rounds
+13-14 ran after 2026-10-01 (see `scratch_logs/v2_flag_completed_patterns_convprobe_rescue_v13.README.md`
+and `_v14.README.md`), and this table's 7,056-pattern scope is combined
+non-RDL + RDL, not the same denominator as the non-RDL-only
+reconciliation done on 2026-10-08. The current, independently
+re-derived **non-RDL-only** totals (from `scratch_logs/FASTERCAP_FINDINGS.md`'s
+2026-10-08 correction note) are 5,953/6,128 `CONVERGED_SANE`, 175
+missing (162 crash-bug family, 13 unattributed), close to but not
+identical to this table's project-wide 160/2/15 breakdown, since this
+table's denominator includes RDL patterns that the 2026-10-08 pass did
+not re-reconcile. Don't treat this table's 160 crash-bug count and the
+2026-10-08 162 figure as the same measurement reconciled to the
+decimal; they're close because both describe mostly the same
+non-RDL-dominated population, not because they were cross-checked
+against each other.
 
 ## Convergence-probe results: rescuing the fully-blacked-out patterns
 
@@ -309,6 +541,14 @@ historical `-s` value, run here as a control) unexpectedly won
 follow-up probe if further rescue effort is warranted.
 
 ### Rescue rate by family
+
+**Scoped to round 1 only** (the original 468-pattern blackout set, as
+of the first 30-config probe) — see "Current state, all families,
+project-wide" above for the up-to-date, full-project numbers after
+all 8 rounds. Kept here because the family-vs-config relationship it
+shows (`Over`/`OverUnder` responding to the `-a` fix, `Under`/
+`UnderDiag` not) was the actual finding that motivated every
+subsequent round.
 
 Family success rate varied far more than config choice did — attempted
 counts are the ground truth from `BLACKOUT_PATTERNS.md`'s 468-pattern
@@ -636,8 +876,213 @@ a new family (folded into `UNDERDIAG_CRASH_INVESTIGATION.md`'s tally,
 
 **Running total after this whole round-8 exploration**: 50 more
 patterns rescued (7 from `convtight2` + 43 from `convtight3`), on top
-of round 8's initial 11 (`convtight`) — bringing the non-bug-related,
-still-unconverged population down from 138 to **77** (11 rescued by
-`convtight`, 7 more by `convtight2`, 43 more by `convtight3` = 61
-total rescued this round; 138 − 61 = 77 remaining, matching the direct
-per-pattern count of unrescued patterns across all three sub-rounds).
+of round 8's initial 11 (`convtight`) — 61 total rescued this round.
+Naive arithmetic (138 − 61) suggests 77 remaining, but that
+double-counts: 2 of `convtight3`'s "unrescued" patterns actually
+crashed (bug-related, not non-bug-`INSANE`) and were miscounted in an
+earlier pass. **Verified directly against the master tracker files
+(see "Current state, all families, project-wide" near the top of this
+document): 74 patterns remain non-bug-related and non-`SANE`** — 62
+clean `CONVERGED_INSANE` under every config tried (including
+`convtight2`'s 2 fully-resistant holdouts, which never timed out,
+just never went `SANE`) + 12 mesh-explosion timeouts (`Under5` 6,
+`Under3` 2, `OverUnder3` 2, `OverUnder5` 1, `Over5` 1 — see
+`MESH_EXPLOSION_INVESTIGATION.md`'s round-8 update for the confirmed
+finding that several of these are the same patterns round 7's `-a0.1`
+fix had already resolved, reproducing under `convtight3`'s tighter
+targets).
+
+### Round 9: scaling mesh-shaping to the full 63-pattern `-a`-resistant holdout, and a new mesh-explosion trigger
+
+Round 8 left 74 non-bug patterns: 63 conclusively `CONVERGED_INSANE`
+under both `-a0.01`/`-a0.005` in `convtight3` (never re-probed with
+mesh-shaping — that lever had only been tried on `convtight2`'s much
+smaller 9-pattern holdout), 9 already exhausted (2 from `convtight2`,
+plus overlap already counted). Ran `convtight2`'s exact 4-config
+playbook (`-d0.05`, `-d0.02`, `-a0.015`, `-d0.02 -s0.01`, all on
+`-pB128 -a0.02` base) across all 63, sharded 40 pods (~1.6
+patterns/shard on average, matching this session's established scale).
+
+**Result: 40/63 (63.5%) rescued** — even better than `convtight2`'s
+78% rate held up at 7x the population. `-d0.02` alone won the large
+majority; tie-break priority `-d0.02` > `-d0.02 -s0.01` > `-d0.05` >
+`-a0.015` (same convention as round 8). Staged in
+`../scratch_logs/v2_flag_completed_patterns_convprobe_rescue_v12.tsv`.
+
+**A genuinely new mesh-explosion trigger, confirmed deterministic**:
+`OverUnder5/M5oM1uM9/S0.0315` hit a 150Gi ephemeral-storage eviction
+under `-d0.05` — first observed during the main run, then re-run
+standalone with a completely fresh storage budget and it evicted
+again, identical cause. This is the first confirmed case of `-d`
+tightening alone (independent of `-a`) triggering the runaway-mesh
+failure mode from `MESH_EXPLOSION_INVESTIGATION.md`, previously only
+seen under `-a` tightening. The pattern was still rescued overall —
+`-d0.02` (tighter than the exploding `-d0.05`) converged cleanly in
+20s — another non-monotonic boundary, this time confirming it applies
+to `-d` exactly as it does to `-a`.
+
+**A third distinct crash instance**: `Under5/M1uM3/S0.224` crashed
+under `-a0.015` — a different spacing from the `Under5/M1uM3/S0.56`
+crash `convtight3` found, same layer pair. Folded into
+`UNDERDIAG_CRASH_INVESTIGATION.md`'s tally (234 → 235 pattern-attempts,
+159 → 160 unique patterns).
+
+**The 22 remaining non-bug patterns after this round are a tight
+cluster**: 17 `OverUnder5`, 4 `OverUnder3`, 1 `Under5`. Notably
+includes all 5 spacings of `OverUnder5 M4oM3uM5` — `BLACKOUT_PATTERNS.md`'s
+"15th fully-blacked-out group," resistant across every config tried
+this entire session (round 1's original 30 plus all of round 9's 4).
+Every config tried across rounds 1-9 has varied `-a`/`-d`/`-s` on top
+of a fixed `-pB128` (Block) preconditioner — preconditioner choice
+itself has never been varied, and is the obvious remaining untried
+lever for this cluster.
+
+**Verified current total: 34 patterns remain non-bug-related and
+non-`SANE`** (11 mesh-explosion timeout + 23 clean `CONVERGED_INSANE`)
+— see "Current state, all families, project-wide" near the top of
+this document, rebuilt from the master tracker files after this
+round, not extended from round 8's arithmetic.
+
+### Round 10: the first preconditioner-dimension probe
+
+Every round since round 1 had only ever varied `-a` (refinement
+target) and `-d`/`-s` (mesh shaping) — preconditioner choice had been
+fixed at `-pB128` (Block) the entire session. Checked
+`FasterCapConsole.cpp`'s actual command-line parser directly (not
+assumed) and confirmed the real option set: `-pN` (none), `-pJ`
+(Jacobi — the actual default when nothing is specified at all),
+`-pB<dim>` (what this session has used throughout), `-pS<dim>`
+(Super/two-level). `-pH` (Hierarchical) stays excluded — confirmed
+broken in round 1 (SIGFPE crash on every pattern tried).
+
+Ran all 34 remaining non-bug patterns under `-pJ`, `-pS128`, `-pS512`
+(base `-d0.1 -s0.03 -a0.02` unchanged, isolating preconditioner choice
+as the only variable), 13 shards/config, 39 pods.
+
+**Result: 10/34 (29%) rescued.** No single preconditioner dominated —
+`-pJ` won 7 (several tied with another config), `-pS128` won 6,
+`-pS512` won 3. Staged in
+`../scratch_logs/v2_flag_completed_patterns_convprobe_rescue_v13.tsv`.
+
+**Headline finding: `OverUnder5 M4oM3uM5` partially resolved.** This is
+`BLACKOUT_PATTERNS.md`'s "15th fully-blacked-out group" — resistant to
+every config tried since round 1's original 30-config sweep. **2 of
+its 5 spacings are now `CONVERGED_SANE`**: `S0.36` (unanimous — all 3
+preconditioners converged it) and `S0.54` (`-pJ` and `-pS512`, not
+`-pS128`). The other 3 spacings (`S0.72`, `S1.08`, `S1.8`) remain
+`CONVERGED_INSANE` under all 3 preconditioners — a clean
+spacing-dependent boundary: narrow spacing is fixable this way, wide
+spacing is not, at least not by preconditioner choice alone.
+
+**Confirms the mesh-explosion failure mode is preconditioner-independent
+for at least one pattern**: `Under5/M2uM4/S0.112` was directly observed
+(live `wires.log`/RSS inspection) hitting the identical 3600s timeout
+under `-pJ` that it hits under every other config tried this session —
+though 5 of the 11 previously-timeout patterns *did* get rescued this
+round (a mix of `Under3/M4uM5` and `Under5/M4uM5`/`M2uM4`/`M2uM5`
+spacings), so the failure mode isn't uniformly preconditioner-proof,
+just proof against it for this specific pattern.
+
+**Verified current total: 24 patterns remain non-bug-related and
+non-`SANE`** (6 mesh-explosion timeout + 18 clean `CONVERGED_INSANE`)
+— see "Current state, all families, project-wide" near the top of
+this document.
+
+### Round 11: combining the two proven levers — and a self-inflicted bug
+
+Rounds 9-10 established two independently-successful but never-combined
+levers: mesh-tightening (`-d0.02`, rescued 47 across rounds 9) and
+preconditioner swap (round 10, 10/34). Round 11 combined them: the 18
+clean-`CONVERGED_INSANE` patterns got preconditioner (`-pJ`/`-pS128`/
+`-pS512`) *plus* `-d0.02`; the 6 mesh-explosion-timeout-prone patterns
+got preconditioner *plus* the proven-safe loose `-a0.1` (round 7's
+fix), testing whether preconditioner choice rescues more of this
+population than `-a0.1` alone did.
+
+**The first 36-pod launch was entirely wasted by a self-inflicted bug**:
+the taskfile-generation script read `wc` values from a cached pickle
+where they were already stored as `"wc5"`/`"wc3"`, then the taskfile
+writer prepended another `"wc"` prefix, producing malformed
+`"wcwc5"`/`"wcwc3"` fields that broke geometry conversion before
+FasterCap ever ran for every single pattern (confirmed:
+`stage=convert|rc=254` for the `-d0.02` set, zero output at all for
+the `-a0.1` set). Caught by verifying actual solver output rather than
+trusting job-phase "Complete" status, fixed the field position,
+refreshed the ConfigMap, deleted all 36 jobs, and relaunched. Because
+the results PVC path is reused across relaunches and the entrypoint
+script appends rather than truncates its log, every `-d0.02` shard's
+log carried one leftover malformed line from the failed attempt —
+filtered out by excluding any line containing `wcwc`, verified this
+cleanly isolated exactly the expected count of genuine new-run lines
+with none lost or duplicated.
+
+**Result (relaunched run): 7/24 (29%) rescued, zero timeouts, zero
+crashes across all 72 attempts.** The loose-`-a` + preconditioner
+combo on the 6 timeout-prone patterns did particularly well — **4 of 6
+rescued** (`Over5/M2oM0/S0.112`, `Under5/M2uM4/S0.112`,
+`Under5/M4uM5/S0.72`, `OverUnder3/M14oM13uM15/S0.54`), including the
+exact `Under5/M2uM4/S0.112` that round 10 showed was
+preconditioner-proof at the original `-a0.02`/`-d0.1` baseline —
+combining the safe loose `-a` with a different preconditioner
+succeeded where either alone had failed. The mesh-tightening set
+rescued 3 of 18. No further `OverUnder5 M4oM3uM5` spacings resolved —
+the 3 remaining (`S0.72`/`S1.08`/`S1.8`) stayed `CONVERGED_INSANE`
+under every preconditioner combined with `-d0.02`, consistent with
+that being a spacing-limited boundary rather than a lever gap.
+
+**Verified current total: 17 patterns remain non-bug-related and
+non-`SANE`** (2 mesh-explosion timeout + 15 clean `CONVERGED_INSANE`)
+— see "Current state, all families, project-wide" near the top of
+this document. With only 17 patterns left, spread thin across many
+distinct layer-pairs/spacings rather than concentrated in a rescuable
+cluster, and the two most-combinable levers already tried together,
+returns from further probing on this specific population are likely
+diminishing — a candidate stopping point for this line of
+investigation, pending user direction on whether to continue. User
+explicitly ruled out retrying `-pH` (confirmed broken, round 1).
+
+### Round 12: GMRES tolerance and initial mesh density — a clean negative result
+
+Two genuinely untried FasterCap dimensions, verified directly from
+`FasterCapConsole.cpp`'s command-line parser rather than assumed:
+`-t<tol>` (GMRES inner-iteration tolerance, default `0.01`, mechanically
+distinct from `-a`/`-d`/`-s` — it controls the *linear solve* inside
+each refinement round, not the refinement loop itself) and `-m<mesh>`
+(initial mesh relative refinement, default `0.1`, the *starting* mesh
+density before any auto-refinement begins, distinct from `-d`'s
+refinement-ratio). Tested both tighter than default (`-t0.001`/
+`-t0.0001`, `-m0.05`/`-m0.02`) plus one combo (`-d0.02` + `-t0.001`),
+on all 17 remaining patterns (15 clean-`INSANE` at the standard
+`-a0.02`, 2 timeout-prone at the safe `-a0.1`) — 33 pods, 83
+pattern-attempts.
+
+**Result: 0/83 (0%) rescued — a clean, unambiguous negative result,
+not a parsing artifact** (verified: all 83 are genuine
+`CONVERGED_INSANE`, zero timeouts, zero crashes, zero malformed data).
+Neither linear-solve precision nor initial mesh density has any
+measurable effect on this population. The residual magnitudes seen
+here are notably larger and more varied (up to `CC≈-0.06`) than the
+small weak-coupling noise that motivated round 8's tighter-`-a` fix —
+consistent with this remaining population being a genuine geometric/
+physical modeling limit rather than a numerical-precision gap, matching
+`HOWTO.md`'s own documented prior finding: *"A residual negative-value
+numerical artifact on weak, long-range coupling terms... No config
+sweep resolves it; treat as a documented model gap."*
+
+One infra note unrelated to the solver: one pod (`t2-shard0`) got stuck
+in `Pending`/`ContainerCreating` because its assigned node was missing
+a required CephFS CSI driver (`rook-system.cephfs.csi.ceph.com`),
+causing repeated volume-mount failures — a cluster configuration issue
+on that specific node, not a FasterCap or taskfile problem. Deleted and
+recreated the job; it ran cleanly on a different node.
+
+**Across rounds 8-12, every FasterCap CLI dimension has now been
+tried on this remaining population**: `-a` (refinement target), `-d`/
+`-s` (mesh shaping), preconditioner choice (`-pJ`/`-pB<dim>`/
+`-pS<dim>`), `-t` (GMRES tolerance), `-m` (initial mesh density), and
+combinations of the above. **Recommendation: stop probing this
+specific 17-pattern population with further CLI-flag sweeps** — the
+remaining gap looks like a genuine solver/physical limit this
+project's own `HOWTO.md` already anticipated, not a configuration gap.
+Verified current total unchanged: **17 patterns remain non-bug-related
+and non-`SANE`.**

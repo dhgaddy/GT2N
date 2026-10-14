@@ -37,6 +37,35 @@ Both were clean `CONVERGED_INSANE` at `-a0.02` and only crashed once
 `-a` was tightened further — a new trigger condition, but the same
 already-known crash-prone family population, not a new family.
 
+**Update, round 9 (`convtight4`, `-a0.015` mesh-shaping scale-up):**
+1 more crash, total now **235** (`Under5/M1uM3/S0.224`, backside) — a
+3rd distinct spacing crashing on this exact layer pair (`M1uM3`),
+different from the `S0.56` instance found in round 8. Same
+already-known crash-prone family population, not a new family.
+
+**Note on what "235" counts**: this is a *pattern-attempt* (event)
+count — the same pattern crashing under two different configs across
+different rounds counts twice. It is not the number of unique patterns
+currently blocked by this bug. For that, see
+`TIMING_REGRESSION_INVESTIGATION.md`'s "Current state, all families,
+project-wide" table (verified 2026-09-29, after round 9): **160 unique
+patterns** project-wide are currently in a crash-bug state (153
+`UnderDiag3`/`UnderDiag5` by family, plus 7 `Under5`/`Over5` patterns
+confirmed to crash despite their family not normally being
+crash-prone).
+
+**Note (2026-10-08):** a later, independent non-RDL-only reconciliation
+(see `scratch_logs/FASTERCAP_FINDINGS.md`'s correction note) found
+**175 non-RDL patterns still missing** a `CONVERGED_SANE` verdict
+overall, of which **162 (93%) are this crash-bug family**
+(`Under5`+`UnderDiag3`+`UnderDiag5` combined) and **13 are not**
+(10 `OverUnder5`, 2 `Over5`, 1 `OverUnder3`, root cause not yet
+attributed). The 160 here is close to but not necessarily the same
+denominator as the 162 there (this 160 is project-wide as of round
+9/2026-09-29, including any RDL patterns, while 162 is non-RDL-only as
+of 2026-10-08), so flag the nuance rather than claim they reconcile to
+the decimal.
+
 ## The question
 
 Why does this crash concentrate almost entirely in `Under`/`UnderDiag`
@@ -74,11 +103,15 @@ followed once, near the very end, by:
 ComputePanelPotentials_2fast().
 ```
 
-Confirmed against the actual FasterCap source (both
-`fastercap-v2-fork/FasterCap_v2` and `FasterCAP_v2/FasterCap_v2` — byte
-identical at this file) at
-`FasterCap/Solver/MultiplyHierarchical.cpp:108` and `:215` (off-by-one
-from the log's `:216`, immaterial — same `ASSERT`, same file). The
+Confirmed against the actual FasterCap source — originally checked
+against `fastercap-v2-fork/FasterCap_v2`/`FasterCAP_v2/FasterCap_v2`
+(byte-identical at this file; off-by-one from the log's `:216`,
+immaterial — same `ASSERT`, same file at `:215`), and reconfirmed
+against `fastercap-fork` (`dgaddy/FasterCap`, an `ediloren/FasterCap`
+fork — the one this project now actually uses), which has the
+identical assert at `FasterCap/Solver/MultiplyHierarchical.cpp:108` and
+`:216` — an exact line match this time, no off-by-one. Same bug,
+present in both forks' shared lineage. The
 surrounding code (`CMultHier::ComputePanelCharges_fast()`, lines
 ~70-115) is an unrolled recursive walk of the panel oct-tree: each
 non-leaf node's charge is the sum of its two children's charges,

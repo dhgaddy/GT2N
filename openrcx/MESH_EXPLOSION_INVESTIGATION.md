@@ -159,3 +159,47 @@ runaway before assuming it's unconvergeable or crash-prone — check panel
 count growth across rounds directly in `wires.log`, and if it's compounding
 without bound, try a target closer to the observed plateau rather than the
 project's globally-best-performing tight config.
+
+## Update, round 8: the fix is narrower than "loosen and forget"
+
+Round 8's `convtight3` (a much later, unrelated round: tightening `-a`
+on a *different* population, `convnc`'s conclusive-`CONVERGED_INSANE`
+patterns, to fix weak-coupling sign-flip noise) accidentally re-tested
+this exact failure mode. Going tighter than `-a0.02` (down to `0.01`/
+`0.005`) on `Under`-family patterns reproduced the identical
+runaway-mesh timeout in **9 of the same 13 patterns** this document's
+`-a0.1` fix had already resolved cleanly. Confirms the practical
+takeaway needs one addendum: **the fix isn't "any looser -a helps" —
+`-a0.02` (the original, medium value) *also* triggers this failure
+mode for these patterns, same as tighter targets. Only a target near
+the observed plateau (`~0.1` here) reliably avoids it.** A pattern
+population prone to this failure mode should not be assumed safe just
+because it's being tightened from an already-loose baseline, or that
+a fix at one target generalizes to "avoid tightening further" — the
+whole tighter-than-plateau range is unsafe, not just "tighter than
+whatever was tried before." See `TIMING_REGRESSION_INVESTIGATION.md`'s
+round 8 section for the full `convtight3` writeup.
+
+## Update, round 9: `-d` tightening triggers it too, not just `-a`
+
+Round 9's `convtight4` (mesh-shaping probe on a *different* population —
+`convnc`'s 63-pattern conclusive-`CONVERGED_INSANE` holdouts, testing
+`-d0.05`/`-d0.02`/`-a0.015`/`-d0.02 -s0.01`) hit a genuinely new
+instance: `OverUnder5/M5oM1uM9/S0.0315` triggered a 150Gi
+ephemeral-storage eviction under `-d0.05` alone (`-a0.02` unchanged
+from default). Confirmed **deterministic** — re-run standalone with a
+completely fresh 150Gi budget, it evicted again on the identical
+cause. This is the first confirmed case of `-d` (mesh epsilon), not
+just `-a` (convergence target), triggering this failure mode.
+
+The pattern itself was still rescued overall: `-d0.02` (tighter still
+than the exploding `-d0.05`) converged cleanly in 20s. So the
+non-monotonic boundary this document already documented for `-a`
+applies identically to `-d` — a value strictly between "default" and
+"the value that works" can be *worse* than either side, for either
+parameter. **Practical guidance update**: when probing a pattern
+population's mesh-shaping parameters (`-d`, `-s`) for this failure
+mode, watch for storage/memory blowup the same way as when probing
+`-a` — don't assume mesh-shaping is a "safer" dimension than
+refinement-target tightening just because it isn't the parameter this
+document was originally about.

@@ -95,6 +95,14 @@ should come from ITF, not ICT. File an issue against
 
 ## FasterCap: built
 
+**Superseded**: this section documents the original `FasterCAP_v2` setup.
+This project now uses only `ediloren/FasterCap` (`fastercap-fork`, a.k.a.
+`dgaddy/FasterCap`, at `/home/dgaddy/research/fastercap-fork`) --
+`FasterCAP_v2` is no longer in active use. Kept below as historical
+record of what was built and why; the local build fixes noted here are
+specific to `FasterCAP_v2`'s own CMake/source quirks and haven't been
+confirmed to apply to `fastercap-fork`.
+
 `https://github.com/george-goudroumanis/FasterCAP_v2` is cloned and built at
 `/home/dgaddy/research/FasterCAP_v2` (binary at `build/FasterCap`, headless
 mode, version 6.0.7). Required `libwxgtk3.2-dev` (installed by mrg -- the
@@ -185,13 +193,41 @@ covering **both** `wire_cnt` in `{1,2,3,5}` (the fuller sweep, not just
 `wire_cnt=1`) across both stacks. See `scratch_logs/V2_FLAG_PROGRESS_TRACKER.md`
 for the full history and final numbers:
 
-- Non-RDL scope: 6,128 patterns, 5,230 converged (85.3%), 898 confirmed
-  unsolvable (a real FastCap solver-precision limitation on weak/long-
-  range coupling terms -- see `scratch_logs/FASTERCAP_FINDINGS.md`),
-  0 remaining untouched.
-- RDL/BRDL (deliberately deferred, see `scratch_logs/RDL_DEFERRED_INDEX.md`):
-  1,107 total, 777 converged, 145 confirmed unsolvable, 185 untouched
-  (out-of-scope v1 patterns from a separate pipeline).
+- Non-RDL scope: 6,128 patterns. **Corrected 2026-10-08** (re-derived
+  directly from `scratch_logs/*.tsv` source data, not from this doc's
+  old prose): **5,953 converged (97.1%)**, **175 non-RDL patterns still
+  missing** (172 with no verdict row at all, 3 `CONVERGED_INSANE`), 0
+  remaining untouched. The 5,230/898 figures below this line in older
+  copies of this doc were the pre-convprobe-rescue baseline (before
+  `scratch_logs/v2_flag_completed_patterns_convprobe_rescue.tsv` through
+  `_v14.tsv` ran) and are no longer current. Of the 175 still missing,
+  **162 (93%) are a separate crash-bug family** (`Under5`/`UnderDiag3`/
+  `UnderDiag5`, the `PotEstimateOpt` isnan/SIGTRAP crash, exit code 133,
+  see `openrcx/UNDERDIAG_CRASH_INVESTIGATION.md`), not the solver-
+  precision limitation below. **Update 2026-10-11**: that crash is now
+  patched and validated (0 crashes across a 162-pattern, 11-config NRP
+  sweep), but 0 of those patterns produced a `CONVERGED_SANE` result
+  either; 14 metal-pair relationships within this family have zero
+  coverage at any spacing, see `openrcx/DIAGONAL_PAIR_COVERAGE_GAPS.md`
+  for what's actually served for those at runtime and why. The
+  remaining **13 are unattributed as of
+  2026-10-08** (10 `OverUnder5`, 2 `Over5`, 1 `OverUnder3`), no cause
+  claimed yet. See `scratch_logs/FASTERCAP_FINDINGS.md`'s 2026-10-08
+  correction note for the full picture.
+- RDL/BRDL. **Corrected 2026-10-14** (re-derived directly from
+  `scratch_logs/all_patterns_v2.txt` and every `*.tsv` source file, not
+  from `scratch_logs/RDL_DEFERRED_INDEX.md`'s own narrative): the true
+  universe is **928** patterns (frontside `M15` + backside `M6`,
+  confirmed by cross-check: 928 + the non-RDL 6,128 = 7,056, the
+  master file's exact total unique pattern count). Of those 928,
+  **923 converged (99.46%)** and **5 are confirmed unsolvable**; **0
+  are untouched**. The earlier 1,107/782/185/145 figures (dated
+  2026-09-15, in `RDL_DEFERRED_INDEX.md`) were stale: the
+  convprobe-rescue rounds (v2-v14) continued rescuing RDL patterns
+  incidentally alongside the non-RDL work, without that doc ever being
+  updated to catch up, the same root cause as the non-RDL staleness
+  corrected on 2026-10-08. This bullet is now the current source of
+  truth for RDL/BRDL coverage.
 
 ## How the final rules file is actually generated
 
@@ -231,6 +267,14 @@ with no bounds check, so a shorter name segfaults). Both stacks now run
 clean end-to-end (0 errors) and produce real, structurally-valid
 `.rcx.model` files -- hand-verified the resistance normalization math
 reproduces the model file's stored values to 5 decimal places.
+
+**Regenerated 2026-10-11**: `build_combined_caps.py`'s `SOURCES` list
+was missing `v2_flag_completed_patterns_convprobe_rescue_v12.tsv`
+through `_v14.tsv`; added them and re-ran the full
+`gen_resistance_table.py` -> `build_combined_caps.py` ->
+`gen_rules_tcl.py` chain, redeploying the regenerated
+`gt2n_combined.rcx.model` to this same location. Clean run, no
+errors.
 
 ## Wiring the model in: frontside only, not fused with backside
 
