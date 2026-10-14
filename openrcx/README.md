@@ -1,359 +1,158 @@
-# GT2N -> OpenRCX process files (draft)
+# GT2N OpenRCX rules model
 
-Draft translation of `nxtgrd/GT2.itf` into OpenRCX's own process-stack format
-(the input to OpenROAD's `gen_solver_patterns -process_file ...`). OpenRCX has
-no ITF/ICT reader, so this translation step is required before any
-FasterCap-based rule generation can start. Not committed yet -- review before
-committing.
+A FasterCap-calibrated OpenRCX extraction rules file for GT2N (a
+backside-power-delivery process, two independent metal stacks:
+frontside signal routing, backside power delivery), replacing the
+flat per-layer analytical model GT2N's build currently falls back to.
 
-- `gt2n_process_frontside.pro` -- M0 through RDL (15 layers)
-- `gt2n_process_backside.pro` -- BPR through BRDL (6 layers, BSPDN)
+## Why this exists
 
-Each file's header documents the exact per-field derivation from
-`GT2.itf` and the units used (resistivity in ohm*um = ITF `RPSQ * THICKNESS`).
+GT2N has no OpenRCX rules file upstream. Without one, every GT2N build
+falls back to `setRC.tcl`/`set_layer_rc` — a single capacitance and
+resistance scalar per metal layer, with no concept of which neighbor a
+wire couples to, no distance-dependence, and no distinction between
+over/under/diagonal coupling. This project builds a real rules file
+instead: `gen_solver_patterns` generates calibration geometry for every
+relevant layer-pair/width/spacing combination, FasterCap solves each
+one's actual capacitance, and the harvested results are assembled into
+`rules/gt2n_combined.rcx.model`, the file `extract_parasitics` reads
+per real net.
 
-## Verified against the real parser (not just read-through)
+Even accounting for every gap and limitation below, this is a strict
+improvement over the flat scalar it replaces: every entry in it is
+real simulated physics of the correct geometry and distance-dependence
+for that specific coupling relationship, not a single layer-wide
+average with none of that structure at all.
 
-Both files were run through the actual `rcx::gen_solver_patterns` command
-(the real C++ parser, `src/rcx/src/extprocess.cpp`) using the `openroad`
-binary bazel-orfs already built (bazel's `tcl_encode` rule only bakes
-`OpenRCX.tcl` into the binary, not `OpenRCX_process.tcl` -- so the friendly
-`gen_solver_patterns` wrapper proc needs to be `source`d manually from
-`src/rcx/src/OpenRCX_process.tcl` at runtime; the underlying
-`rcx::gen_solver_patterns` swig command is already linked in). This step
-needs no FasterCap -- only the solve step after pattern generation does.
+## Current coverage
 
-- **Backside file: full run completed successfully** -- all 6 patterns
-  generated, real `[INFO RCX-025x]` measurement logs, no errors.
-- **Frontside file: all 15 conductors + 16 dielectrics parsed with exactly
-  the intended values** (`process.out` echo cross-checked by hand: e.g.
-  computed cumulative height for M9 = 1.4um, matching
-  `M8.height + M8.thickness + M9_diel.thickness` exactly). Full pattern
-  generation was still combinatorially working through 15-layer over/under
-  patterns when stopped -- expected for a stack this size, not an error.
-- **Bug found and fixed**: `DIELECTRIC` blocks must have one key/value pair
-  per line. An earlier draft (and OpenROAD's own reference example at
-  `rcx/test/rcx_v2/FasterCapModel/data/process`, e.g. its `m2_2` block)
-  crammed multiple fields onto one line -- this silently parses as
-  `epsilon=0`/`thickness=0` with **no error message**, confirmed by running
-  the real parser and inspecting `process.out`. `CONDUCTOR` blocks were
-  never affected. Both `.pro` files here are already fixed to one-field-
-  per-line.
+| scope | total | converged | gap |
+|---|---|---|---|
+| Non-RDL | 6,128 | 5,953 (97.1%) | 175 (2.9%) |
+| RDL/BRDL | 928 | 923 (99.46%) | 5 confirmed unsolvable |
 
-## Resolved
+**The 175-pattern non-RDL gap** is not a silent zero. It splits into:
 
-- **Topside capping dielectric**: both files end with an `air_cap`
-  dielectric (epsilon=1.0) above the last conductor (RDL / BRDL). This is
-  sourced, not guessed -- `qrc/GT2.ict` explicitly declares
-  `background_dielectric_constant 1.0` in its `process GT2 {}` block, which
-  is Cadence QRC's documented value for the region above the last declared
-  layer. `GT2.itf` has no equivalent field, but StarRC's own convention
-  (implicit air above the top conductor absent an explicit cap) agrees. The
-  16.0um thickness is *not* a PDK value -- it's a solver boundary-size
-  choice (~10x RDL/BRDL's 1.6um min_width/min_spacing, a rule of thumb to
-  keep the solver's outer boundary far enough from the top conductor to
-  avoid truncation error); revisit if solver accuracy/runtime needs differ.
+- **162 patterns** were blocked by a real FasterCap solver crash
+  (`PotEstimateOpt`/`SIGTRAP` on numerical divergence in "Under"-type
+  geometry) — now patched and validated (0 crashes across an
+  11-config NRP sweep against all 162). These still fall back to a
+  pooled isolated-pattern (1-2 wire) substitute for that specific
+  layer-pair relationship — real measured physics of the right
+  geometry and distance-dependence, just from a different wire-count
+  context, with a quantified bias in the single-digit-to-low-teens
+  percent range, not an unbounded error. Full detail:
+  `DIAGONAL_PAIR_COVERAGE_GAPS.md`.
+- The crash investigation itself: `UNDERDIAG_CRASH_INVESTIGATION.md`
+  (discovery) and `FASTERCAP_BUG_REPORT.md` (the fix).
+- **13** further unattributed patterns (`OverUnder5`/`Over5`/
+  `OverUnder3`), same isolated-substitute fallback, no cause
+  identified yet.
 
-## Not yet covered / open items
+**RDL/BRDL**: every pattern in the true 928-pattern universe has been
+attempted; only 5 are confirmed genuinely unsolvable (the same
+solver-precision limitation on weak/long-range coupling documented in
+`scratch_logs/FASTERCAP_FINDINGS.md`). See `scratch_logs/RDL_DEFERRED_INDEX.md`
+for history.
 
-- **Via/contact resistance** (`VIA V0..V13`, `BV0..BV4`, `VG`, `VSD`,
-  `VBPR` in `GT2.itf`, `RPV` values) isn't part of the process file -- it
-  feeds the *final* rules/model assembly step directly (already used as-is
-  in `designs/gt2n/setRC_full.tcl`'s `-via -resistance` lines), not
-  `gen_solver_patterns`.
-- **Device/MOL layers** (`GATE`, `ACT`, `SDCON`, `VSD`, `VG`) are excluded --
-  below the lowest OpenRCX-relevant routing layer (`M0`), out of scope for
-  wire RC extraction.
-- **Single corner only**: GT2N currently ships one process corner (`tt`);
-  these files reflect that. No Cmin/Cmax variants exist in the PDK yet.
-- **Frontside/backside solved independently**: GT2N is BSPDN; the two
-  stacks are separated by `BOX_diel` (buried oxide) after wafer thinning and
-  have no CONDUCTOR of their own, so each side is its own field-solver
-  domain referenced to its own local ground plane. No attempt is made here
-  to model frontside-to-backside coupling.
+## How to use it
 
-## Known upstream bug (noted, not yet filed)
+```tcl
+get_model_corners -ext_model_file gt2n_combined.rcx.model
+define_rcx_corners -corner_list "TYP"
+set_extraction_rules_file gt2n_combined.rcx.model
+extract_parasitics -version 2.0 ...
+```
 
-`qrc/GT2.ict`'s via table disagrees with `nxtgrd/GT2.itf` in two places
-(cross-checked via/bottom_layer/top_layer connectivity, not just via name):
+The live file is `rules/gt2n_combined.rcx.model`. One caveat: this
+model is frontside-only for any consumer besides `extract_parasitics`
+— OpenROAD's PSM (power-grid analysis) gets its per-layer resistance
+from the separate `set_layer_rc`/`setRC.tcl` path and never reads a
+`.rcx.model` file at all, so backside power-delivery analysis still
+needs that older, cruder path regardless of this model's accuracy for
+signal-net RC.
 
-- **V11/V12/V13** (`M11->M12`, `M12->M13`, `M13->RDL`): ICT gives identical
-  `area_resistance 6.08 0.003136` for all three -- looks like the table
-  stopped varying after V10 and just repeats it. ITF correctly scales via
-  area/resistance up through the M12/M13/RDL transition (`0.95@0.02016`,
-  `0.15@0.1296`), consistent with those layers' much wider `WMIN`
-  (0.056->0.360->1.600). Confirmed by grep across both files, not a rounding
-  difference.
-- **V4** (`M4->M5`): ITF `RPV=27.8` vs. ICT `resistance=40.52` (same area,
-  0.000441) -- an isolated, unexplained mismatch, doesn't fit the
-  repeated-neighbor pattern above.
+To regenerate the model from scratch, or to repeat this whole process
+for a different PDK, see `HOWTO.md` — it documents the full pipeline
+(process-file translation, pattern generation, FasterCap quirks and
+flags, cluster-scale running, rules-file assembly) in reusable detail.
+This file intentionally doesn't duplicate any of that.
 
-ITF is the trustworthy source here (see the "reconcile ITF vs ICT"
-discussion this session) -- via resistances for the final rules assembly
-should come from ITF, not ICT. File an issue against
-`azadnaeemi/GT2N` later; not done yet.
+## How to read the rules model file
 
-## FasterCap: built
+`rules/gt2n_combined.rcx.model` is plain text, organized as one block
+per (reference layer, coupling family), each containing one sub-block
+per neighbor layer:
 
-**Superseded**: this section documents the original `FasterCAP_v2` setup.
-This project now uses only `ediloren/FasterCap` (`fastercap-fork`, a.k.a.
-`dgaddy/FasterCap`, at `/home/dgaddy/research/fastercap-fork`) --
-`FasterCAP_v2` is no longer in active use. Kept below as historical
-record of what was built and why; the local build fixes noted here are
-specific to `FasterCAP_v2`'s own CMake/source quirks and haven't been
-confirmed to apply to `fastercap-fork`.
+```
+Metal 14 DIAGUNDER 15
+DIST count 360 width 0.038
+0 0 0 0
+0.038 0 2.99789e-05 0
+...
+END DIAGUNDER
+```
 
-`https://github.com/george-goudroumanis/FasterCAP_v2` is cloned and built at
-`/home/dgaddy/research/FasterCAP_v2` (binary at `build/FasterCap`, headless
-mode, version 6.0.7). Required `libwxgtk3.2-dev` (installed by mrg -- the
-only dependency needing admin rights; everything else, including Eigen
-despite what the README implies, was either already present or unneeded).
-Two local fixes were needed on top of a stock checkout, both applied
-directly in this clone:
+- **`Metal <N>`** is a *combined routing-level index*, not the PDK's
+  own conductor name — backside layers are 1-6, frontside layers are
+  7-21 (frontside layer = its own local index + 6). This remap happens
+  once, in `build_combined_caps.py` (see `HOWTO.md` Stage 5b); nothing
+  past that point knows about per-stack local numbering. To find a
+  specific real conductor's entries, convert first.
+- **The family** is one of `OVER`/`UNDER`/`OVERUNDER`/`DIAGUNDER`
+  (plus a `RESOVER` family for resistance) — `OVER`/`UNDER` are a
+  direct neighbor immediately above/below; `OVERUNDER` is sandwiched on
+  both sides; `DIAGUNDER` is a neighbor below, offset diagonally
+  (OpenRCX has no symmetric `DIAGOVER`). A trailing `0`/`1` on the
+  family name (`OVER0`, `OVER1`) is the open-ended, 1-2-wire isolated
+  measurement, kept in its own table; the bare family name
+  (`OVER`, `DIAGUNDER`) is the fully-coupled table that `wc3` and
+  `wc5` both pool into (see `DIAGONAL_PAIR_COVERAGE_GAPS.md` for why
+  that pooling matters).
+- **Each `DIST count N width W` row is `<distance> <coupling>
+  <fringe> <resistance>`** — confirmed directly from the reader
+  (`extDistRC::readRC`, `openroad-fork/src/rcx/src/extRCmodel.cpp:74-79`):
+  column 1 is separation distance, column 2 is the direct coupling
+  capacitance term, column 3 is fringe capacitance, column 4 is
+  resistance (always `0` here; real resistance lives in the separate
+  `RESOVER` family). These are per-unit-length values in the solver's
+  own internal scale, not the `pF`/`fF` units the harvested `.tsv`
+  data is reported in.
+- **`DIST count 0`** means no data was ever generated for that exact
+  (reference, family, neighbor) triple — looked up at runtime, this
+  returns `nullptr` and is treated as `0.0` added capacitance, silently,
+  with no warning. Confirmed every such empty entry in this file is
+  either a structurally impossible cross-stack pairing, a distance
+  beyond `gen_solver_patterns`' sweep range, or one of the documented
+  gaps above — not an unexplained hole.
 
-- `FasterCap_v2/FasterCap/CMakeLists.txt`: `wxWidgets_CONFIG_OPTIONS` was
-  hardcoded to `--version=3.0`; only 3.2.4 is installed, so `wx-config`
-  returned nothing and CMake's `find_package(wxWidgets)` failed silently.
-  Changed to `--version=3.2`.
-- `FasterCap_v2/FasterCap/FasterCapConsole.cpp`: missing `#include <omp.h>`
-  (`omp_set_max_active_levels` undeclared) -- the project's own README
-  flags this as a known possible gap; added the include.
-- Also had to delete the stale, committed `CMakeCache.txt`/`CMakeFiles`
-  (leftover from the original author's machine, absolute paths pointed at
-  `/home/ggeorgios-r/...`) before a fresh out-of-tree `cmake` configure
-  would proceed at all.
+## Status
 
-Configured with `cmake -G"Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
--DFASTFIELDSOLVERS_HEADLESS=ON ../FasterCap_v2/FasterCap`.
+- **Local test build**: `lfsr` (HighTide's smallest gt2n port, ~250
+  instances) ran `synth` cleanly as a first smoke test with this model
+  wired in via `RCX_RULES`. Not yet taken further through the flow.
+- **Not yet upstream**: gt2n currently has zero real extraction by
+  default anywhere upstream — every build silently falls back to a
+  cruder-than-`setRC.tcl` global-route estimate
+  (`orfs-no-rcx-spef-stub.patch`). Making this the default needs a PR
+  to `The-OpenROAD-Project/OpenROAD-flow-scripts` itself (not
+  HighTide): add `gt2n_frontside.rcx.model` to
+  `flow/platforms/gt2n/`, and one `config.mk` line
+  (`export RCX_RULES ?= $(PLATFORM_DIR)/gt2n_frontside.rcx.model`).
+  HighTide itself needs no code changes once that lands — just bump
+  the pinned OpenROAD-flow-scripts commit.
 
-## Pattern generation: done for wire_cnt=1
+## Other docs in this directory
 
-Ran `gen_solver_patterns -wire_cnt 1 -version 1` (default corner "TYP",
-default `w_list`/`s_list`/`over_dist`/`under_dist`) for both stacks into
-`work/frontside/` and `work/backside/`:
-- Frontside: 325 patterns, clean (no WARNING/ERROR in `rulesGen.log`).
-- Backside: 68 patterns, clean.
-
-Still open: the `-wire_cnt {2,3,5} -version 2` sweep for a fuller
-calibration set (not yet attempted).
-
-## FasterCap conversion/solve/parse chain: proven end-to-end on one pattern
-
-Ran the full chain for `backside`'s `Over1/M1oM0` pattern (BPR over the
-implicit ground plane, W=0.032um, S=0.112um, L=10um):
-`gen_solver_patterns` -> `wires` -> `UniversalFormat2FasterCap_923.py` ->
-`wires.lst` -> **FasterCap** (real solve, converged after 9 iterations,
-weighted Frobenius norm 0.0089 < the 0.01 target) -> `wires.log` ->
-`fasterCapParse.py` -> `M1oM0.caps`.
-
-**Sanity-checked the result by hand**: converged self-capacitance for the
-BPR wire was 1.31478e-16 F. A parallel-plate estimate
-(`eps0*3.9*(0.032um*10um)/0.09um`, using BPR_diel's `ER`/thickness) gives
-1.23e-16 F -- within 6%, consistent with the field solver capturing fringing
-capacitance beyond the simple plate estimate. Real, physically sane number.
-
-Three real bugs found and fixed in our own copies under `scripts/` (NOT
-edited in the bazel-vendored OpenROAD source -- that's shared/managed by
-the build system):
-
-- **`UniversalFormat2FasterCap_923.py`**: the `Wires/`/`Dielectrics/`
-  shared-panel-pool references baked into `wires.lst` are a **hardcoded**
-  `"../../../../../../{}"` (6 directory levels) at two call sites -- not
-  computed from actual path depth. Our real structure (confirmed for every
-  pattern in both stacks) is 5 levels (`out_dir` + `family/pair/W/S`).
-  Fixed both occurrences to 5 levels (`../../../../../`). Symptom before
-  the fix: FasterCap immediately erroring `cannot open file
-  '.../Wires/wire_....txt'`.
-- **`run_fasterCap.bash`**: expects `process.out` to live *inside* `in_dir`
-  (the corner directory, e.g. `TYP/`), but `gen_solver_patterns` writes it
-  as `TYP`'s *sibling*. Workaround: copy `process.out` into `TYP/` (done
-  for `work/backside/TYP/process.out`; do the same for frontside before
-  running its chain).
-  Symptom before the fix: converter errors `Specified Process File path
-  does not exist!`.
-- **`fasterCapParse.py`**: the single-file path (`-in_list_file` empty)
-  calls `readFasterCapOutPutLog(...)` without capturing its return value,
-  then references the never-assigned `retCode` right after --
-  `UnboundLocalError`. The `.caps` file is already fully and correctly
-  written by that point (confirmed: output content identical before/after
-  the fix), so this only broke the trailing success/incomplete/empty
-  summary-stats reporting. Fixed by assigning `retCode = ...`.
-
-The wxWidgets `"Assert failure"` messages FasterCap prints to stderr are
-the known-benign issue the FasterCap README itself documents (fixed
-upstream in wxWidgets >= 3.1.1) -- not a real error.
-
-## Status update (2026-09-15): the plan above is done, at full scale
-
-The three "next steps" originally listed here (frontside proven,
-`wire_cnt` sweep decided, final rules file assembled) are all complete
--- scaled up far beyond the single-pattern proof above, via a full
-nonstop -> 3-config experimental -> 7-config D-bracket k8s pipeline
-covering **both** `wire_cnt` in `{1,2,3,5}` (the fuller sweep, not just
-`wire_cnt=1`) across both stacks. See `scratch_logs/V2_FLAG_PROGRESS_TRACKER.md`
-for the full history and final numbers:
-
-- Non-RDL scope: 6,128 patterns. **Corrected 2026-10-08** (re-derived
-  directly from `scratch_logs/*.tsv` source data, not from this doc's
-  old prose): **5,953 converged (97.1%)**, **175 non-RDL patterns still
-  missing** (172 with no verdict row at all, 3 `CONVERGED_INSANE`), 0
-  remaining untouched. The 5,230/898 figures below this line in older
-  copies of this doc were the pre-convprobe-rescue baseline (before
-  `scratch_logs/v2_flag_completed_patterns_convprobe_rescue.tsv` through
-  `_v14.tsv` ran) and are no longer current. Of the 175 still missing,
-  **162 (93%) are a separate crash-bug family** (`Under5`/`UnderDiag3`/
-  `UnderDiag5`, the `PotEstimateOpt` isnan/SIGTRAP crash, exit code 133,
-  see `openrcx/UNDERDIAG_CRASH_INVESTIGATION.md`), not the solver-
-  precision limitation below. **Update 2026-10-11**: that crash is now
-  patched and validated (0 crashes across a 162-pattern, 11-config NRP
-  sweep), but 0 of those patterns produced a `CONVERGED_SANE` result
-  either; 14 metal-pair relationships within this family have zero
-  coverage at any spacing, see `openrcx/DIAGONAL_PAIR_COVERAGE_GAPS.md`
-  for what's actually served for those at runtime and why. The
-  remaining **13 are unattributed as of
-  2026-10-08** (10 `OverUnder5`, 2 `Over5`, 1 `OverUnder3`), no cause
-  claimed yet. See `scratch_logs/FASTERCAP_FINDINGS.md`'s 2026-10-08
-  correction note for the full picture.
-- RDL/BRDL. **Corrected 2026-10-14** (re-derived directly from
-  `scratch_logs/all_patterns_v2.txt` and every `*.tsv` source file, not
-  from `scratch_logs/RDL_DEFERRED_INDEX.md`'s own narrative): the true
-  universe is **928** patterns (frontside `M15` + backside `M6`,
-  confirmed by cross-check: 928 + the non-RDL 6,128 = 7,056, the
-  master file's exact total unique pattern count). Of those 928,
-  **923 converged (99.46%)** and **5 are confirmed unsolvable**; **0
-  are untouched**. The earlier 1,107/782/185/145 figures (dated
-  2026-09-15, in `RDL_DEFERRED_INDEX.md`) were stale: the
-  convprobe-rescue rounds (v2-v14) continued rescuing RDL patterns
-  incidentally alongside the non-RDL work, without that doc ever being
-  updated to catch up, the same root cause as the non-RDL staleness
-  corrected on 2026-10-08. This bullet is now the current source of
-  truth for RDL/BRDL coverage.
-
-## How the final rules file is actually generated
-
-Three scripts in `scripts/` (not the calibration-flow reference scripts
-above -- these are this project's own, built 2026-09-15):
-
-1. **`gen_resistance_table.py`** -- resistance needs no field solver.
-   Reads `RPSQ` directly from `nxtgrd/GT2.itf` (cross-validated 0.000%
-   against both our own `.pro` translation and HighTide's already-
-   running `setRC.tcl` analytical model, layer by layer). Emits
-   `resistance_{frontside,backside}.TYP` in the format
-   `extRCmodel_solver.cpp::readRCvalues` expects (reverse-engineered
-   from the C++ source -- no example of this file exists anywhere in
-   the codebase).
-2. **`build_combined_caps.py`** -- concatenates every tracked
-   `CONVERGED_SANE` pattern's stored `raw_result` (already-computed
-   data from `scratch_logs/v2_flag_completed_patterns*.tsv`, no
-   FasterCap re-run needed) into `gt2n_{frontside,backside}.caps`, the
-   exact format `read_rcx_tables -file` expects (identical to what
-   `fasterCapParse.py` itself produces).
-3. **`gen_rules_tcl.py`** -- generates `gen_rules_{frontside,backside}.tcl`:
-   `init_rcx_model -met_cnt <15|6>`, then one `read_rcx_tables` call per
-   (`-wire_index` in `{1,2,3}`) x (`-over`/`-under`/`-over_under`/`-diag`)
-   -- matching this project's own wc1/wc2->wire1, wc3->wire2,
-   wc5->wire3 convention -- plus the resistance table, then
-   `write_rcx_model`.
-
-Run order: `gen_resistance_table.py` && `build_combined_caps.py` &&
-`gen_rules_tcl.py`, then `openroad -no_init -exit gen_rules_frontside.tcl`
-and same for backside (each writes its own `.rcx.model`).
-
-**Verified against a real `openroad` binary (26Q2), not just written
-blind** -- found and fixed a real crash in the resistance-line format
-along the way (the pattern-name field needs exactly 5 `/`-separated
-segments; `getAllowedPatternWireNums` indexes backward from the end
-with no bounds check, so a shorter name segfaults). Both stacks now run
-clean end-to-end (0 errors) and produce real, structurally-valid
-`.rcx.model` files -- hand-verified the resistance normalization math
-reproduces the model file's stored values to 5 decimal places.
-
-**Regenerated 2026-10-11**: `build_combined_caps.py`'s `SOURCES` list
-was missing `v2_flag_completed_patterns_convprobe_rescue_v12.tsv`
-through `_v14.tsv`; added them and re-ran the full
-`gen_resistance_table.py` -> `build_combined_caps.py` ->
-`gen_rules_tcl.py` chain, redeploying the regenerated
-`gt2n_combined.rcx.model` to this same location. Clean run, no
-errors.
-
-## Wiring the model in: frontside only, not fused with backside
-
-Investigated how a `.rcx.model` actually gets loaded for a real
-extraction run (there is **no `read_rcx_model` command** -- confirmed
-via a real working reference,
-`rcx_v2/flow/gcd/scripts/gcd_flow_v2_model_v2.tcl`: the real sequence
-is `get_model_corners -ext_model_file <file>` ->
-`define_rcx_corners -corner_list "TYP"` ->
-`set_extraction_rules_file <file>` ->
-`extract_parasitics -version 2.0 ...`).
-
-This raised whether `gt2n_frontside.rcx.model` and
-`gt2n_backside.rcx.model` need to be fused into one combined model or
-wired in as two separate ones for a single BSPDN design. **Neither --
-they belong to two different downstream tools entirely:**
-
-- The PDK's own native reference deck, `qrc/GT2.ict`, only defines
-  `GATE`/`M0`-`M13`/`RDL` -- zero backside conductors. The PDK's own
-  extraction deck never modeled backside for signal-net RC at all.
-- Traced why in source: PSM (`src/psm/src/ir_solver.cpp::getResistanceMap()`)
-  gets its per-layer resistance from the `est` module's simple scalar
-  analytical model (`estimate_parasitics_->layerRC(...)`, the same
-  thing `set_layer_rc`/`setRC.tcl` populates) -- **PSM never touches
-  OpenRCX, `extract_parasitics`, or a `.rcx.model` file.** This is
-  exactly what `setRC.tcl`'s own comment ("PSM needs these to build
-  its resistance map") refers to, specifically for the backside
-  layers.
-
-So: **`gt2n_frontside.rcx.model` is the one real target** for
-`set_extraction_rules_file` + `extract_parasitics` on an actual GT2N
-build. `gt2n_backside.rcx.model` isn't consumable by PSM as generated
--- if the backside calibration work should feed IR-drop analysis
-later, it needs a separate, much smaller distillation into scalar
-`set_layer_rc` values, not attempted yet.
-
-## Local test build: lfsr, in progress (2026-09-15)
-
-Picked `lfsr` from HighTide's existing gt2n ports -- smallest by far
-(~250 placed instances vs. minimax's ~60k / sha3's 36,195), already has
-a documented QoR baseline, no macros/SRAM. HighTide's
-`tools/bazel_to_orfs.sh designs/gt2n/lfsr` prepares a self-contained,
-bazel-free ORFS bundle; copied `gt2n_frontside.rcx.model` into it and
-added `export RCX_RULES?=<path-to-model>` to its `config.mk`. Ran via
-`FLOW_HOME=<bazel-materialized external/orfs+> OPENROAD_EXE=<local
-openroad-26Q2> YOSYS_EXE=<local yosys> ./run.sh <stage>` (HighTide
-builds OpenROAD/yosys from source rather than a traditional ORFS
-`tools/install/` tree, so both exes need pointing explicitly). `synth`
-completed cleanly as a first smoke test.
-
-## What it would take to make this the upstream default for gt2n
-
-Traced where gt2n's platform files (`lef/`, `lib/`, `gds/`,
-`setRC.tcl`, `config.mk`) come from: HighTide doesn't vendor them --
-the whole `flow/platforms/gt2n/` directory ships inside the **pinned
-OpenROAD-flow-scripts archive itself** (an `archive_override` tarball
-in HighTide's `MODULE.bazel`). HighTide's own
-`patches/orfs-gt2n-flow-build.patch` only adds a small platform-
-registration diff, no platform data.
-
-**Confirmed gt2n currently has zero real extraction by default,
-anywhere upstream.** HighTide's `patches/orfs-no-rcx-spef-stub.patch`
-patches `final_report.tcl`'s `else` branch -- the one that fires
-whenever `RCX_RULES` isn't set -- to stub an empty SPEF after it prints
-`"OpenRCX is not enabled for this platform. Falling back to global
-route-based estimates."` and calls `estimate_parasitics
--global_routing` (an even cruder fallback than `setRC.tcl`'s per-layer
-scalars). That's the branch every gt2n build currently takes.
-
-**So the real upstream change is a PR to
-`The-OpenROAD-Project/OpenROAD-flow-scripts` itself** (not HighTide,
-not this repo):
-1. Add `gt2n_frontside.rcx.model` into that repo's
-   `flow/platforms/gt2n/` directory.
-2. Add one `config.mk` line: `export RCX_RULES ?= $(PLATFORM_DIR)/gt2n_frontside.rcx.model`.
-3. `final_report.tcl`'s existing `if` branch (already correct) then
-   fires automatically for every gt2n design.
-
-HighTide itself would need no code changes -- just bump the pinned
-OpenROAD-flow-scripts commit once the upstream PR lands, and
-`orfs-no-rcx-spef-stub.patch` becomes dead code for gt2n (check other
-platforms before removing it).
+- `HOWTO.md` — the full, reusable generation process.
+- `RULES_VALIDATION.md` — validation methodology and QoR comparison
+  against the existing `setRC.tcl` baseline.
+- `UNDERDIAG_CRASH_INVESTIGATION.md` / `FASTERCAP_BUG_REPORT.md` — the
+  `SIGTRAP` crash: discovery and fix.
+- `DIAGONAL_PAIR_COVERAGE_GAPS.md` — the remaining 14 metal-pair gaps
+  in the crash-bug family: what's served for them today, why, and
+  what was and wasn't fixable.
+- `BLACKOUT_PATTERNS.md` / `TIMING_REGRESSION_INVESTIGATION.md` /
+  `MESH_EXPLOSION_INVESTIGATION.md` — the historical convergence-rescue
+  effort (pre-dates the crash-bug fix).
+- `scratch_logs/RDL_DEFERRED_INDEX.md` — RDL/BRDL coverage history.
