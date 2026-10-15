@@ -223,6 +223,20 @@ convergence investigation (is there something about M5/M7
 specifically, as reference conductors, that a targeted fix could
 resolve) or should stay documented as a gap.
 
+**Reverted (2026-10-15).** The local-only implementation above was
+undone: `scratch_logs/v2_flag_manual_approx_within_tier.tsv` deleted,
+`build_combined_caps.py`'s `EXCLUDE_PATTERNS` removed, and
+`gt2n_frontside.caps`/`gt2n_combined.rcx.model` (both the
+`scripts/` working copy and the deployed `rules/` copy) reverted to
+their last-committed state (`732da63a`, the v12-v14 regeneration
+without the approximation). Confirmed directly: `Metal 13 DIAGUNDER
+14` (the compiled `M7duM8` slot) is back to `DIST count 120`, the
+original isolated-pattern-substitute value. `M7duM8`/`M7duM9` are
+currently served the same isolated-pattern substitute as the other 12
+pairs in this document, with no exception. None of the approximation
+work was ever committed to git, so this revert has no git history to
+clean up -- it only ever existed in an uncommitted working tree.
+
 ## Rules file regeneration (2026-10-11)
 
 Regenerated `openrcx/scripts/gt2n_combined.rcx.model` from the
@@ -319,20 +333,22 @@ question -- see the investigation that follows.
 
 ## Bottom line
 
-Of the 14 pairs, `M7duM8`/`M7duM9` (both families, 4 of the 14) now
-have the within-tier-B approximation implemented (locally) (see
-above), replacing their isolated-pattern substitute with real
-densely-coupled data borrowed from a validated, physically-identical
-analog. `M7duM10` (both families) is a genuine toss-up, not a clear
-"leave it" call: a measured-but-possibly-M7-anomaly-inflated
-substitute versus a modeled-but-unverified extrapolation, pending the
-open investigation into why `M7`/`M5` misbehave as reference
-conductors. The remaining 9 (`M5duM6`, `M5duM8`, `M5duM9` in
-both families, plus `UnderDiag3`'s `M5duM7` and `M7duM11`) still get
-the isolated-pattern substitute -- a real, quantified (~8-13% on the
-one pair directly checked, directionally toward under-counting
-dense-routing coupling) but bounded and better-than-the-wire-length-
-model limitation, not a silent zero and not an unbounded error -- and
+**As of 2026-10-15, all 14 pairs are back to the isolated-pattern
+substitute, with no exceptions.** `M7duM8`/`M7duM9` had a validated
+within-tier-B approximation implemented locally (2026-10-13), but it
+was reverted (2026-10-15, see above) before ever being committed --
+treat the approximation as a documented, evaluated option that was
+tried and backed out, not as current behavior. `M7duM10` remains a
+genuine toss-up, not a clear "leave it" call: a measured-but-possibly-
+M7-anomaly-inflated substitute versus a modeled-but-unverified
+extrapolation, pending the open investigation into why `M7`/`M5`
+misbehave as reference conductors. The remaining 9 (`M5duM6`,
+`M5duM8`, `M5duM9` in both families, plus `UnderDiag3`'s `M5duM7` and
+`M7duM11`) get the same isolated-pattern substitute -- a real,
+quantified (~8-13% on the one pair directly checked, directionally
+toward under-counting dense-routing coupling) but bounded and
+better-than-the-wire-length-model limitation, not a silent zero and
+not an unbounded error -- and
 have no working approximation method found despite two genuine
 attempts. They should stay documented as an accepted model gap unless
 a dedicated convergence investigation into M5/M7 as reference
