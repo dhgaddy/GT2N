@@ -186,7 +186,7 @@ unlike the cross-tier case above.
 | M5-M7, M5-M8, M5-M9 | cross-tier shift method tested and empirically disproven (0.42 ratio) | None |
 | M7-M11 (UnderDiag3 only) | cross-tier (B-to-C), same failure mode plausible, untested | Unknown |
 
-**Implemented (2026-10-13)** for `M7duM8`/`M7duM9` (both families).
+**Implemented (Locally only) (2026-10-13)** for `M7duM8`/`M7duM9` (both families).
 `scratch_logs/v2_flag_manual_approx_within_tier.tsv` (36 synthetic
 rows: 2 pairs x 2 families x 9 W/S combos) borrows the matched-W/S
 raw measurement from the within-tier-B analog(s) -- `avg(M8duM9,
@@ -251,10 +251,6 @@ independently verified the way the OVER/UNDER/DIAGUNDER distance-limit
 explanation was. Worth a quick dedicated check before assuming it's
 benign.
 
-**Deployed (2026-10-13)**: copied to `openrcx/rules/gt2n_combined.rcx.model`
-(the canonical, previously-deployed location), after the `M7duM8`/
-`M7duM9` approximation above was folded in. Nothing in this whole
-document's worth of changes has been committed yet.
 
 ## M7duM10: measured-but-possibly-large vs. modeled-but-unverified
 
@@ -324,7 +320,7 @@ question -- see the investigation that follows.
 ## Bottom line
 
 Of the 14 pairs, `M7duM8`/`M7duM9` (both families, 4 of the 14) now
-have the within-tier-B approximation implemented and deployed (see
+have the within-tier-B approximation implemented (locally) (see
 above), replacing their isolated-pattern substitute with real
 densely-coupled data borrowed from a validated, physically-identical
 analog. `M7duM10` (both families) is a genuine toss-up, not a clear
