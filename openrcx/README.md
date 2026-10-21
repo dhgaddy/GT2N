@@ -152,6 +152,10 @@ END DIAGUNDER
 - `DIAGONAL_PAIR_COVERAGE_GAPS.md` — the remaining 14 metal-pair gaps
   in the crash-bug family: what's served for them today, why, and
   what was and wasn't fixable.
+- `HIGHTIDE_QOR_COMPARISON.md` — real chip-build QoR comparison
+  (setup/hold/Fmax/power) with this model wired in via `RCX_RULES`
+  across HighTide's gt2n designs, against the existing `setRC.tcl`
+  baselines.
 - `BLACKOUT_PATTERNS.md` / `TIMING_REGRESSION_INVESTIGATION.md` /
   `MESH_EXPLOSION_INVESTIGATION.md` — the historical convergence-rescue
   effort (pre-dates the crash-bug fix).
