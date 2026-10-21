@@ -1,189 +1,218 @@
-# GT2N -> OpenRCX process files (draft)
+# GT2N OpenRCX rules model
 
-Draft translation of `nxtgrd/GT2.itf` into OpenRCX's own process-stack format
-(the input to OpenROAD's `gen_solver_patterns -process_file ...`). OpenRCX has
-no ITF/ICT reader, so this translation step is required before any
-FasterCap-based rule generation can start. Not committed yet -- review before
-committing.
+A FasterCap-calibrated OpenRCX extraction rules file for GT2N (a
+backside-power-delivery process, two independent metal stacks:
+frontside signal routing, backside power delivery). This branch
+contains only the rules file itself and this README — nothing else
+from the development history — so it's a minimal starting point for
+anyone who wants to experiment with it.
 
-- `gt2n_process_frontside.pro` -- M0 through RDL (15 layers)
-- `gt2n_process_backside.pro` -- BPR through BRDL (6 layers, BSPDN)
+**⚠️ Not yet validated against a reference extraction tool (Quantus /
+StarRC).** Everything in this document describes what *has* been
+checked (the solver's own internal convergence quality, and real
+HighTide chip-build results using the model) — not an independent
+cross-check against a commercial field-solver or parasitic extractor.
+Treat absolute capacitance/resistance values as unverified until that
+comparison exists. Relative structure (distance-dependence, which
+neighbor a wire couples to, over/under/diagonal distinction) is real
+measured physics either way, which is already more than the flat
+model below gives you — but don't take it as ground truth yet.
 
-Each file's header documents the exact per-field derivation from
-`GT2.itf` and the units used (resistivity in ohm*um = ITF `RPSQ * THICKNESS`).
+## Why this exists
 
-## Verified against the real parser (not just read-through)
+GT2N has no OpenRCX rules file upstream. Without one, every GT2N build
+falls back to `setRC.tcl`/`set_layer_rc` — a single capacitance and
+resistance scalar per metal layer, with no concept of which neighbor a
+wire couples to, no distance-dependence, and no distinction between
+over/under/diagonal coupling. This project builds a real rules file
+instead: calibration geometry is generated for every relevant
+layer-pair/width/spacing combination relevant to GT2N's process stack,
+FasterCap (an open-source 3D field solver) solves each one's actual
+capacitance, and the harvested results are assembled into
+`rules/gt2n_combined.rcx.model`, the file `extract_parasitics` reads
+per real net.
 
-Both files were run through the actual `rcx::gen_solver_patterns` command
-(the real C++ parser, `src/rcx/src/extprocess.cpp`) using the `openroad`
-binary bazel-orfs already built (bazel's `tcl_encode` rule only bakes
-`OpenRCX.tcl` into the binary, not `OpenRCX_process.tcl` -- so the friendly
-`gen_solver_patterns` wrapper proc needs to be `source`d manually from
-`src/rcx/src/OpenRCX_process.tcl` at runtime; the underlying
-`rcx::gen_solver_patterns` swig command is already linked in). This step
-needs no FasterCap -- only the solve step after pattern generation does.
+Even with the validation caveat above and the coverage gaps below,
+this is a strict improvement over the flat scalar it replaces in one
+specific sense: every entry in it is real simulated field-solver
+physics of the correct geometry and distance-dependence for that
+specific coupling relationship, not a single layer-wide average with
+none of that structure at all. Whether that translates into closer
+absolute agreement with a true reference extractor is exactly what
+hasn't been checked yet.
 
-- **Backside file: full run completed successfully** -- all 6 patterns
-  generated, real `[INFO RCX-025x]` measurement logs, no errors.
-- **Frontside file: all 15 conductors + 16 dielectrics parsed with exactly
-  the intended values** (`process.out` echo cross-checked by hand: e.g.
-  computed cumulative height for M9 = 1.4um, matching
-  `M8.height + M8.thickness + M9_diel.thickness` exactly). Full pattern
-  generation was still combinatorially working through 15-layer over/under
-  patterns when stopped -- expected for a stack this size, not an error.
-- **Bug found and fixed**: `DIELECTRIC` blocks must have one key/value pair
-  per line. An earlier draft (and OpenROAD's own reference example at
-  `rcx/test/rcx_v2/FasterCapModel/data/process`, e.g. its `m2_2` block)
-  crammed multiple fields onto one line -- this silently parses as
-  `epsilon=0`/`thickness=0` with **no error message**, confirmed by running
-  the real parser and inspecting `process.out`. `CONDUCTOR` blocks were
-  never affected. Both `.pro` files here are already fixed to one-field-
-  per-line.
+## Current coverage
 
-## Resolved
+| scope | total patterns | converged | gap |
+|---|---|---|---|
+| Non-RDL (regular signal/power routing) | 6,128 | 5,953 (97.1%) | 175 (2.9%) |
+| RDL/BRDL (redistribution/ground-plane layers) | 928 | 923 (99.46%) | 5 confirmed unsolvable |
 
-- **Topside capping dielectric**: both files end with an `air_cap`
-  dielectric (epsilon=1.0) above the last conductor (RDL / BRDL). This is
-  sourced, not guessed -- `qrc/GT2.ict` explicitly declares
-  `background_dielectric_constant 1.0` in its `process GT2 {}` block, which
-  is Cadence QRC's documented value for the region above the last declared
-  layer. `GT2.itf` has no equivalent field, but StarRC's own convention
-  (implicit air above the top conductor absent an explicit cap) agrees. The
-  16.0um thickness is *not* a PDK value -- it's a solver boundary-size
-  choice (~10x RDL/BRDL's 1.6um min_width/min_spacing, a rule of thumb to
-  keep the solver's outer boundary far enough from the top conductor to
-  avoid truncation error); revisit if solver accuracy/runtime needs differ.
+A "pattern" here is one specific (layer-pair, width, spacing,
+wire-count) combination FasterCap was asked to solve. "Converged"
+means FasterCap produced a numerically sane capacitance/resistance
+result for it (`CONVERGED_SANE`); the alternative is either a solver
+crash or a solver-precision failure on very weak/long-range coupling
+(root-caused and confirmed, not a parsing or config bug).
 
-## Not yet covered / open items
+**The gap is not a silent zero.** Every one of these missing
+combinations still gets served *something* at runtime — OpenRCX never
+returns a null/zero lookup for them:
 
-- **Via/contact resistance** (`VIA V0..V13`, `BV0..BV4`, `VG`, `VSD`,
-  `VBPR` in `GT2.itf`, `RPV` values) isn't part of the process file -- it
-  feeds the *final* rules/model assembly step directly (already used as-is
-  in `designs/gt2n/setRC_full.tcl`'s `-via -resistance` lines), not
-  `gen_solver_patterns`.
-- **Device/MOL layers** (`GATE`, `ACT`, `SDCON`, `VSD`, `VG`) are excluded --
-  below the lowest OpenRCX-relevant routing layer (`M0`), out of scope for
-  wire RC extraction.
-- **Single corner only**: GT2N currently ships one process corner (`tt`);
-  these files reflect that. No Cmin/Cmax variants exist in the PDK yet.
-- **Frontside/backside solved independently**: GT2N is BSPDN; the two
-  stacks are separated by `BOX_diel` (buried oxide) after wafer thinning and
-  have no CONDUCTOR of their own, so each side is its own field-solver
-  domain referenced to its own local ground plane. No attempt is made here
-  to model frontside-to-backside coupling.
+- **162 of the 175 non-RDL gaps** come from one specific solver crash
+  bug (numerical divergence in a particular class of "Under"-type
+  geometry) that has since been patched upstream in the solver fork,
+  but patching the crash didn't make those specific patterns
+  converge — they hit a separate, deeper solver-precision limitation
+  on weak coupling instead. For these, OpenRCX falls back to a pooled
+  isolated-pattern (1-2 wire) substitute for that exact layer-pair
+  relationship: real measured physics of the right geometry and
+  distance-dependence, just measured in a different wire-count
+  context (fewer neighboring wires than the fully-coupled case). The
+  quantified bias this introduces is in the single-digit-to-low-teens
+  percent range — not zero, but bounded and characterized, not an
+  unbounded error. 14 of the underlying metal-pair relationships (out
+  of 29 affected) have *no* coverage at any spacing for this
+  substitute either; those specifically fall back one level further,
+  to OpenRCX's own cross-pattern interpolation using the two nearest
+  patterns that do have data — still a measured-physics-based
+  estimate, not a flat default.
+- **13 further non-RDL patterns** (different geometric families, no
+  common cause identified yet) hit the same solver-precision
+  limitation and get the same isolated-pattern-substitute fallback.
+- **RDL/BRDL**: every pattern in the true 928-pattern universe has
+  been attempted; only 5 are confirmed genuinely unsolvable (same
+  solver-precision limitation), with the same substitute-fallback
+  behavior.
 
-## Known upstream bug (noted, not yet filed)
+In short: nothing in this model silently falls back to the old flat
+`setRC.tcl` value or to zero. The worst case is a same-geometry
+measurement taken in a less-coupled wire context, or an interpolation
+between two real nearby measurements.
 
-`qrc/GT2.ict`'s via table disagrees with `nxtgrd/GT2.itf` in two places
-(cross-checked via/bottom_layer/top_layer connectivity, not just via name):
+## How to use it
 
-- **V11/V12/V13** (`M11->M12`, `M12->M13`, `M13->RDL`): ICT gives identical
-  `area_resistance 6.08 0.003136` for all three -- looks like the table
-  stopped varying after V10 and just repeats it. ITF correctly scales via
-  area/resistance up through the M12/M13/RDL transition (`0.95@0.02016`,
-  `0.15@0.1296`), consistent with those layers' much wider `WMIN`
-  (0.056->0.360->1.600). Confirmed by grep across both files, not a rounding
-  difference.
-- **V4** (`M4->M5`): ITF `RPV=27.8` vs. ICT `resistance=40.52` (same area,
-  0.000441) -- an isolated, unexplained mismatch, doesn't fit the
-  repeated-neighbor pattern above.
+```tcl
+get_model_corners -ext_model_file gt2n_combined.rcx.model
+define_rcx_corners -corner_list "TYP"
+set_extraction_rules_file gt2n_combined.rcx.model
+extract_parasitics -version 2.0 ...
+```
 
-ITF is the trustworthy source here (see the "reconcile ITF vs ICT"
-discussion this session) -- via resistances for the final rules assembly
-should come from ITF, not ICT. File an issue against
-`azadnaeemi/GT2N` later; not done yet.
+The rules file is `rules/gt2n_combined.rcx.model` in this repo. In a
+HighTide-style flow, point your design's `RCX_RULES` source at this
+file (copy it alongside your design, or reference it directly) and
+`extract_parasitics` will use it automatically instead of falling back
+to a flow's global-route-based estimate.
 
-## FasterCap: built
+**One caveat for backside power-delivery analysis**: this model is
+frontside-only for any consumer besides `extract_parasitics`.
+OpenROAD's PSM (power-grid analysis) gets its per-layer resistance
+from the separate `set_layer_rc`/`setRC.tcl` path and never reads a
+`.rcx.model` file at all, so backside power-delivery analysis still
+needs that older, cruder path regardless of this model's accuracy for
+signal-net RC. **This is a general OpenROAD architectural limitation,
+not a gap in this model or something specific to GT2N** — confirmed
+directly in source (`src/psm/src/ir_solver.cpp`,
+`src/est/src/EstimateParasitics.cpp`): PSM's resistance lookup is
+populated exclusively by the `set_layer_rc` Tcl command's literal
+scalar inputs (falling back to the LEF-declared static layer
+resistance if that was never called), and there is no code path
+anywhere that reads an RCX rules file into it. RCX rules are consumed
+only by `extract_parasitics`, which produces per-net SPEF for STA, a
+different data shape than the single per-layer value PSM expects. This
+would be true for any PDK's OpenRCX model, not just GT2N's.
 
-`https://github.com/george-goudroumanis/FasterCAP_v2` is cloned and built at
-`/home/dgaddy/research/FasterCAP_v2` (binary at `build/FasterCap`, headless
-mode, version 6.0.7). Required `libwxgtk3.2-dev` (installed by mrg -- the
-only dependency needing admin rights; everything else, including Eigen
-despite what the README implies, was either already present or unneeded).
-Two local fixes were needed on top of a stock checkout, both applied
-directly in this clone:
+## How to read the rules model file
 
-- `FasterCap_v2/FasterCap/CMakeLists.txt`: `wxWidgets_CONFIG_OPTIONS` was
-  hardcoded to `--version=3.0`; only 3.2.4 is installed, so `wx-config`
-  returned nothing and CMake's `find_package(wxWidgets)` failed silently.
-  Changed to `--version=3.2`.
-- `FasterCap_v2/FasterCap/FasterCapConsole.cpp`: missing `#include <omp.h>`
-  (`omp_set_max_active_levels` undeclared) -- the project's own README
-  flags this as a known possible gap; added the include.
-- Also had to delete the stale, committed `CMakeCache.txt`/`CMakeFiles`
-  (leftover from the original author's machine, absolute paths pointed at
-  `/home/ggeorgios-r/...`) before a fresh out-of-tree `cmake` configure
-  would proceed at all.
+`rules/gt2n_combined.rcx.model` is plain text, organized as one block
+per (reference layer, coupling family), each containing one sub-block
+per neighbor layer:
 
-Configured with `cmake -G"Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
--DFASTFIELDSOLVERS_HEADLESS=ON ../FasterCap_v2/FasterCap`.
+```
+Metal 14 DIAGUNDER 15
+DIST count 360 width 0.038
+0 0 0 0
+0.038 0 2.99789e-05 0
+...
+END DIAGUNDER
+```
 
-## Pattern generation: done for wire_cnt=1
+- **`Metal <N>`** is a *combined routing-level index*, not the PDK's
+  own conductor name — GT2N has two independent metal stacks (backside
+  power delivery, frontside signal routing) folded into one combined
+  numbering so OpenRCX can address both from a single file: backside
+  layers are combined-index 1-6, frontside layers are 7-21 (a
+  frontside layer's combined index is its own local PDK index + 6).
+  To find a specific real conductor's entries, you need to know which
+  stack it's on and convert accordingly.
+- **The family** is one of `OVER`/`UNDER`/`OVERUNDER`/`DIAGUNDER`
+  (plus a `RESOVER` family for resistance) — `OVER`/`UNDER` are a
+  direct neighbor immediately above/below; `OVERUNDER` is sandwiched on
+  both sides; `DIAGUNDER` is a neighbor below, offset diagonally
+  (OpenRCX has no symmetric `DIAGOVER`). A trailing `0`/`1` on the
+  family name (`OVER0`, `OVER1`) is the open-ended, 1-2-wire isolated
+  measurement, kept in its own table (this is the substitute data
+  described above); the bare family name (`OVER`, `DIAGUNDER`) is the
+  fully-coupled table.
+- **Each `DIST count N width W` row is `<distance> <coupling>
+  <fringe> <resistance>`** — confirmed directly from the reader
+  (`extDistRC::readRC`, `openroad-fork/src/rcx/src/extRCmodel.cpp:74-79`):
+  column 1 is separation distance, column 2 is the direct coupling
+  capacitance term, column 3 is fringe capacitance, column 4 is
+  resistance (always `0` here; real resistance lives in the separate
+  `RESOVER` family). These are per-unit-length values in the solver's
+  own internal scale, not `pF`/`fF`.
+- **`DIST count 0`** means no data was ever generated for that exact
+  (reference, family, neighbor) triple — looked up at runtime, this
+  returns `nullptr` and is treated as `0.0` added capacitance, silently,
+  with no warning. Every such empty entry in this file is either a
+  structurally impossible cross-stack pairing, a distance beyond the
+  generation sweep's range, or one of the documented gaps above — not
+  an unexplained hole.
 
-Ran `gen_solver_patterns -wire_cnt 1 -version 1` (default corner "TYP",
-default `w_list`/`s_list`/`over_dist`/`under_dist`) for both stacks into
-`work/frontside/` and `work/backside/`:
-- Frontside: 325 patterns, clean (no WARNING/ERROR in `rulesGen.log`).
-- Backside: 68 patterns, clean.
+## What real chip builds show so far
 
-Still open: the `-wire_cnt {2,3,5} -version 2` sweep for a fuller
-calibration set (not yet attempted).
+The model has been wired into real HighTide gt2n chip builds (via
+`RCX_RULES`) and compared against each design's existing adopted
+baseline (the same flow config, just with the old flat `setRC.tcl`
+fallback instead of this model). Headline finding: **results are
+mixed, not uniformly better or worse** — and that mix is itself
+important context before you try this on your own design.
 
-## FasterCap conversion/solve/parse chain: proven end-to-end on one pattern
+Most designs' existing flow tuning (`HOLD_SLACK_MARGIN`, clock period,
+utilization, input-delay offsets) was iteratively closed against the
+old flat model's specific capacitance/resistance numbers. Real
+OpenRCX extraction reports genuinely different per-net RC — that's
+the entire point of building this model, it has real distance- and
+neighbor-dependent structure the flat model never had — so a
+configuration that was tuned to exactly zero violations under the old
+estimate is not guaranteed to still be exactly zero under a different,
+more accurate one. Several designs picked up new setup and/or hold
+violations under real extraction that weren't present at baseline;
+one tiny design (an LFSR) stayed fully clean both ways and even
+achieved a slightly better maximum frequency. **If you try this model
+on a design that was already timing-closed against the flat model,
+expect to need a normal re-closure pass (margins, clock, utilization)
+against the new numbers — don't assume it's a zero-effort drop-in.**
 
-Ran the full chain for `backside`'s `Over1/M1oM0` pattern (BPR over the
-implicit ground plane, W=0.032um, S=0.112um, L=10um):
-`gen_solver_patterns` -> `wires` -> `UniversalFormat2FasterCap_923.py` ->
-`wires.lst` -> **FasterCap** (real solve, converged after 9 iterations,
-weighted Frobenius norm 0.0089 < the 0.01 target) -> `wires.log` ->
-`fasterCapParse.py` -> `M1oM0.caps`.
+This is exactly the kind of signal the still-pending Quantus/StarRC
+validation is meant to help explain: whether these shifts reflect the
+model capturing real effects the flat estimate missed, or an
+inaccuracy in the model itself that needs fixing. Right now, that's
+open.
 
-**Sanity-checked the result by hand**: converged self-capacitance for the
-BPR wire was 1.31478e-16 F. A parallel-plate estimate
-(`eps0*3.9*(0.032um*10um)/0.09um`, using BPR_diel's `ER`/thickness) gives
-1.23e-16 F -- within 6%, consistent with the field solver capturing fringing
-capacitance beyond the simple plate estimate. Real, physically sane number.
+## Status
 
-Three real bugs found and fixed in our own copies under `scripts/` (NOT
-edited in the bazel-vendored OpenROAD source -- that's shared/managed by
-the build system):
+GT2N currently has zero real parasitic extraction by default anywhere
+upstream — every build silently falls back to a cruder-than-`setRC.tcl`
+global-route estimate. This rules file is not yet wired in as that
+default anywhere; using it today means pointing your own build's
+`RCX_RULES` at it explicitly, as shown above.
 
-- **`UniversalFormat2FasterCap_923.py`**: the `Wires/`/`Dielectrics/`
-  shared-panel-pool references baked into `wires.lst` are a **hardcoded**
-  `"../../../../../../{}"` (6 directory levels) at two call sites -- not
-  computed from actual path depth. Our real structure (confirmed for every
-  pattern in both stacks) is 5 levels (`out_dir` + `family/pair/W/S`).
-  Fixed both occurrences to 5 levels (`../../../../../`). Symptom before
-  the fix: FasterCap immediately erroring `cannot open file
-  '.../Wires/wire_....txt'`.
-- **`run_fasterCap.bash`**: expects `process.out` to live *inside* `in_dir`
-  (the corner directory, e.g. `TYP/`), but `gen_solver_patterns` writes it
-  as `TYP`'s *sibling*. Workaround: copy `process.out` into `TYP/` (done
-  for `work/backside/TYP/process.out`; do the same for frontside before
-  running its chain).
-  Symptom before the fix: converter errors `Specified Process File path
-  does not exist!`.
-- **`fasterCapParse.py`**: the single-file path (`-in_list_file` empty)
-  calls `readFasterCapOutPutLog(...)` without capturing its return value,
-  then references the never-assigned `retCode` right after --
-  `UnboundLocalError`. The `.caps` file is already fully and correctly
-  written by that point (confirmed: output content identical before/after
-  the fix), so this only broke the trailing success/incomplete/empty
-  summary-stats reporting. Fixed by assigning `retCode = ...`.
-
-The wxWidgets `"Assert failure"` messages FasterCap prints to stderr are
-the known-benign issue the FasterCap README itself documents (fixed
-upstream in wxWidgets >= 3.1.1) -- not a real error.
-
-## Next steps (not started)
-
-1. Run frontside's pattern set through the same conversion/solve/parse
-   chain (backside is proven; frontside just needs `process.out` copied
-   into `work/frontside/TYP/` first, same workaround as backside).
-2. Decide whether `wire_cnt=1` alone is a sufficient calibration set or
-   whether the fuller `-wire_cnt {2,3,5} -version 2` sweep is needed before
-   assembling the final rules file.
-3. Batch the conversion/solve/parse chain across all 325 + 68 patterns
-   (currently proven on 1 of 393), then assemble the final `.rules` file
-   OpenROAD's `RCX_RULES` expects (`init_rcx_model` + `read_rcx_tables` per
-   corner + `write_rcx_model`).
+If you experiment with this and find something — a design where it
+helps, a design where it clearly doesn't, a pattern family you'd
+expect to matter that doesn't show up, or anything that looks like a
+bug in the model itself rather than a flow-tuning issue — that
+feedback is exactly what's needed before pursuing formal validation,
+so please share what you find.
