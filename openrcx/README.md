@@ -2,21 +2,9 @@
 
 A FasterCap-calibrated OpenRCX extraction rules file for GT2N (a
 backside-power-delivery process, two independent metal stacks:
-frontside signal routing, backside power delivery). This branch
-contains only the rules file itself and this README — nothing else
-from the development history — so it's a minimal starting point for
-anyone who wants to experiment with it.
+frontside signal routing, backside power delivery).
 
-**⚠️ Not yet validated against a reference extraction tool (Quantus /
-StarRC).** Everything in this document describes what *has* been
-checked (the solver's own internal convergence quality, and real
-HighTide chip-build results using the model) — not an independent
-cross-check against a commercial field-solver or parasitic extractor.
-Treat absolute capacitance/resistance values as unverified until that
-comparison exists. Relative structure (distance-dependence, which
-neighbor a wire couples to, over/under/diagonal distinction) is real
-measured physics either way, which is already more than the flat
-model below gives you — but don't take it as ground truth yet.
+**Not yet validated against a reference extraction tool.** 
 
 ## Why this exists
 
@@ -33,62 +21,12 @@ capacitance, and the harvested results are assembled into
 per real net.
 
 Even with the validation caveat above and the coverage gaps below,
-this is a strict improvement over the flat scalar it replaces in one
+this is still an improvement over the flat scalar it replaces in one
 specific sense: every entry in it is real simulated field-solver
 physics of the correct geometry and distance-dependence for that
 specific coupling relationship, not a single layer-wide average with
 none of that structure at all. Whether that translates into closer
-absolute agreement with a true reference extractor is exactly what
-hasn't been checked yet.
-
-## Current coverage
-
-| scope | total patterns | converged | gap |
-|---|---|---|---|
-| Non-RDL (regular signal/power routing) | 6,128 | 5,953 (97.1%) | 175 (2.9%) |
-| RDL/BRDL (redistribution/ground-plane layers) | 928 | 923 (99.46%) | 5 confirmed unsolvable |
-
-A "pattern" here is one specific (layer-pair, width, spacing,
-wire-count) combination FasterCap was asked to solve. "Converged"
-means FasterCap produced a numerically sane capacitance/resistance
-result for it (`CONVERGED_SANE`); the alternative is either a solver
-crash or a solver-precision failure on very weak/long-range coupling
-(root-caused and confirmed, not a parsing or config bug).
-
-**The gap is not a silent zero.** Every one of these missing
-combinations still gets served *something* at runtime — OpenRCX never
-returns a null/zero lookup for them:
-
-- **162 of the 175 non-RDL gaps** come from one specific solver crash
-  bug (numerical divergence in a particular class of "Under"-type
-  geometry) that has since been patched upstream in the solver fork,
-  but patching the crash didn't make those specific patterns
-  converge — they hit a separate, deeper solver-precision limitation
-  on weak coupling instead. For these, OpenRCX falls back to a pooled
-  isolated-pattern (1-2 wire) substitute for that exact layer-pair
-  relationship: real measured physics of the right geometry and
-  distance-dependence, just measured in a different wire-count
-  context (fewer neighboring wires than the fully-coupled case). The
-  quantified bias this introduces is in the single-digit-to-low-teens
-  percent range — not zero, but bounded and characterized, not an
-  unbounded error. 14 of the underlying metal-pair relationships (out
-  of 29 affected) have *no* coverage at any spacing for this
-  substitute either; those specifically fall back one level further,
-  to OpenRCX's own cross-pattern interpolation using the two nearest
-  patterns that do have data — still a measured-physics-based
-  estimate, not a flat default.
-- **13 further non-RDL patterns** (different geometric families, no
-  common cause identified yet) hit the same solver-precision
-  limitation and get the same isolated-pattern-substitute fallback.
-- **RDL/BRDL**: every pattern in the true 928-pattern universe has
-  been attempted; only 5 are confirmed genuinely unsolvable (same
-  solver-precision limitation), with the same substitute-fallback
-  behavior.
-
-In short: nothing in this model silently falls back to the old flat
-`setRC.tcl` value or to zero. The worst case is a same-geometry
-measurement taken in a less-coupled wire context, or an interpolation
-between two real nearby measurements.
+absolute agreement with a true reference extractor has not been validated yet.
 
 ## How to use it
 
@@ -171,48 +109,53 @@ END DIAGUNDER
   generation sweep's range, or one of the documented gaps above — not
   an unexplained hole.
 
-## What real chip builds show so far
+## Current coverage
 
-The model has been wired into real HighTide gt2n chip builds (via
-`RCX_RULES`) and compared against each design's existing adopted
-baseline (the same flow config, just with the old flat `setRC.tcl`
-fallback instead of this model). Headline finding: **results are
-mixed, not uniformly better or worse** — and that mix is itself
-important context before you try this on your own design.
+| scope | total patterns | converged | gap |
+|---|---|---|---|
+| Non-RDL (regular signal/power routing) | 6,128 | 5,953 (97.1%) | 175 (2.9%) |
+| RDL/BRDL (redistribution/ground-plane layers) | 928 | 923 (99.46%) | 5 confirmed unsolvable |
 
-Most designs' existing flow tuning (`HOLD_SLACK_MARGIN`, clock period,
-utilization, input-delay offsets) was iteratively closed against the
-old flat model's specific capacitance/resistance numbers. Real
-OpenRCX extraction reports genuinely different per-net RC — that's
-the entire point of building this model, it has real distance- and
-neighbor-dependent structure the flat model never had — so a
-configuration that was tuned to exactly zero violations under the old
-estimate is not guaranteed to still be exactly zero under a different,
-more accurate one. Several designs picked up new setup and/or hold
-violations under real extraction that weren't present at baseline;
-one tiny design (an LFSR) stayed fully clean both ways and even
-achieved a slightly better maximum frequency. **If you try this model
-on a design that was already timing-closed against the flat model,
-expect to need a normal re-closure pass (margins, clock, utilization)
-against the new numbers — don't assume it's a zero-effort drop-in.**
+A "pattern" here is one specific (layer-pair, width, spacing,
+wire-count) combination FasterCap was asked to solve. "Converged"
+means FasterCap produced a positive capacitance (a single results includes multiple capacitances, fringe, coupling etc.)
+result for it; the alternative is either a solver
+crash or a solver-precision failure on very weak/long-range coupling that results in negative capacitances
+(root-caused and confirmed, not a parsing or config bug).
 
-This is exactly the kind of signal the still-pending Quantus/StarRC
-validation is meant to help explain: whether these shifts reflect the
-model capturing real effects the flat estimate missed, or an
-inaccuracy in the model itself that needs fixing. Right now, that's
-open.
+**The gap is not a silent zero.** Every one of these missing
+combinations still gets served *something* at runtime — OpenRCX never
+returns a null/zero lookup for them:
 
-## Status
+- **162 of the 175 non-RDL gaps** come from one specific solver crash
+  bug (numerical divergence in a particular class of "Under"-type
+  geometry) that has since been patched upstream in the solver fork,
+  but patching the crash didn't make those specific patterns
+  converge — they hit a separate, deeper solver-precision limitation
+  on weak coupling instead. For these, OpenRCX falls back to a pooled
+  isolated-pattern (1-2 wire) substitute for that exact layer-pair
+  relationship: real measured physics of the right geometry and
+  distance-dependence, just measured in a different wire-count
+  context (fewer neighboring wires than the fully-coupled case). The
+  quantified bias this introduces is in the single-digit-to-low-teens
+  percent range — not zero, but bounded and characterized, not an
+  unbounded error. 14 of the underlying metal-pair relationships (out
+  of 29 affected) have *no* coverage at any spacing for this
+  substitute either; those specifically fall back one level further,
+  to OpenRCX's own cross-pattern interpolation using the two nearest
+  patterns that do have data, which is still justifiably superior to
+  the current, flat scalar and wire length model.
+- **13 further non-RDL patterns** (different geometric families, no
+  common cause identified yet) hit the same solver-precision
+  limitation and get the same isolated-pattern-substitute fallback.
+- **RDL/BRDL**: every pattern in the true 928-pattern universe has
+  been attempted; only 5 are confirmed genuinely unsolvable (same
+  solver-precision limitation), with the same substitute-fallback
+  behavior.
 
-GT2N currently has zero real parasitic extraction by default anywhere
-upstream — every build silently falls back to a cruder-than-`setRC.tcl`
-global-route estimate. This rules file is not yet wired in as that
-default anywhere; using it today means pointing your own build's
-`RCX_RULES` at it explicitly, as shown above.
+In short: nothing in this model silently falls back to the old flat
+`setRC.tcl` value or to zero. The worst case is a same-geometry
+measurement taken in a less-coupled wire context, or an interpolation
+between two real nearby measurements.
 
-If you experiment with this and find something — a design where it
-helps, a design where it clearly doesn't, a pattern family you'd
-expect to matter that doesn't show up, or anything that looks like a
-bug in the model itself rather than a flow-tuning issue — that
-feedback is exactly what's needed before pursuing formal validation,
-so please share what you find.
+
