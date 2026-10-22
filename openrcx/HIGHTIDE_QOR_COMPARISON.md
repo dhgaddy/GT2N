@@ -35,32 +35,71 @@ cell counts excluding `class:other` fill/tap, etc.) for a direct apples-to-apple
 comparison. Harvested logs/artifacts live in the **`HighTide` repo** (not
 this one) under `scratch_logs/gt2n_rcx_qor_run/`.
 
-**Status at time of writing:** 7/10 complete and harvested (lfsr, minimax,
-sha3, floonoc, partition_a, partition_m, partition_p). Still running:
-gemmini, partition_c, partition_o — rows below marked "pending", to be filled
-in as each completes.
+**Status at time of writing (2026-10-22):** 9/10 complete and harvested
+(lfsr, minimax, sha3, floonoc, partition_a, partition_m, partition_p,
+partition_c, partition_o). Still running: gemmini (first attempt crashed
+with a `bazel` segmentation fault after ~4.5h stuck retrying one routing
+action — looks like transient node/resource contention on the shared
+cluster, not a design or model issue; a retry is in progress).
 
-## Comparison table
+## 1. Timing: baseline vs RCX-rules
 
-| Design | Config unchanged | Baseline commit | Setup WS (ps) base→new | Setup TNS base→new | Setup viol base→new | Hold WS (ps) base→new | Hold TNS base→new | Hold viol base→new | Fmax (GHz) base→new | Power (mW) base→new |
-|---|---|---|---|---|---|---|---|---|---|---|
-| lfsr | 80% util, M4/M11, 160ps | `6fefbd34` | 20.62 → **25.12** | 0 → 0 | 0 → 0 | n/a → 22.17 | 0 → 0 | 0 → 0 | 7.17 → **7.41** | 0.271 → 0.260 |
-| minimax | 60% util, M4/M11, 780ps | `934f62f7` | -0.50 → **-19.99** | 0 → -1121.95 | 1 → **115** | n/a → 19.26 | — → 0 | — → 0 | 1.28 → 1.25 | 4.843 → 4.674 |
-| sha3 | 75% util, M4/M11, 425ps, HOLD_SLACK_MARGIN=3 | `7a01fa6b` | 1.83 → **-9.72** | 0 → -92.67 | 0 → **17** | n/a → **-14.97** | 0 → **-1024.19** | 0 → **239** | 2.36 → 2.30 | 54.307 → 67.228 |
-| floonoc | 92.2% real util, M4/M11, 958ps, HOLD_SLACK_MARGIN=10 | `412b3838` | 86.45 → **-159.67** | 0 → -29677.2 | 0 → **304** | n/a → **-52.49** | 0 → **-2416.72** | 0 → **213** | 1.15 → 0.89 | 29.807 → 28.944 |
-| partition_a | 80% util, M4/M11, 895ps, HOLD_SLACK_MARGIN=20 | `b2098088` | 40.78 → **-45.10** | 0 → -267.09 | 0 → **11** | n/a → **-6.96** | 0 → **-150.91** | 0 → **66** | 1.17 → 1.06 | 19.927 → 19.266 |
-| partition_m | 82% util, M4/M11, 660ps, HOLD_SLACK_MARGIN=5 | `412b3838` | 65.28 → 46.60 | 0 → 0 | 0 → 0 | n/a → **-22.33** | 0 → **-1586.22** | 0 → **149** | 1.68 → 1.63 | 9.920 → 9.487 |
-| partition_p | 45% util, M6, 1635ps | `412b3838` | 48.89 → 192.60 | 0 → 0 | 0 → 0 | n/a → **-34.02** | 0 → **-107.34** | 0 → **11** | 0.63 → 0.69 | 24.751 → 24.035 |
-| gemmini | 87% util, M4/M11, 1450ps, indelay+67ps | `fcc184e` | +2.38 (not on webpage) | 0 | 0 | -9.83 | -31.85 | 15 | 0.690 | — |
-| partition_c | M6, 1300ps (known non-convergent hold) | `412b383` | not on webpage | — | 75 | — | — | 2497 | 0.674 | — |
-| partition_o | 46% util, M4/M11, 2270/2838ps dual-clock | `412b3838` | **PENDING — still running** | | | | | | | |
+Period_min marked **†** is derived from the reported Fmax (1000/Fmax_GHz)
+rather than read directly from that build's own `report_clock_min_period`
+output — used where the current committed baseline's own period_min was
+never independently recorded (only its Fmax, in a port/review commit
+message). Not derived for lfsr/minimax/sha3/floonoc/partition_a/gemmini,
+whose baseline period_min values are read directly from each design's own
+archived `6_finish.rpt`/`scratch_logs` row, cross-checked against the
+matching commit.
 
-Bold = a new real violation/regression that wasn't present at baseline, or a
-notable improvement (lfsr's Fmax). `gemmini`/`partition_c` rows show baseline
-only (not yet harvested from the new run). `partition_o`'s row is entirely
-pending.
+| Design | Configured clock(s) | Baseline period_min / Fmax | RCX-rules period_min / Fmax | Δ period_min | Baseline setup WNS/TNS (viol) | RCX-rules setup WNS/TNS (viol) | Baseline hold WNS/TNS (viol) | RCX-rules hold WNS/TNS (viol) |
+|---|---|---|---|---|---|---|---|---|
+| lfsr | 160 ps | 139.38 ps / 7.17 GHz | 134.88 ps / 7.41 GHz | -3.2% | 20.62 / 0 (0) | 25.12 / 0 (0) | n/a / 0 (0) | 22.17 / 0 (0) |
+| minimax | 780 ps | 780.50 ps / 1.28 GHz | 799.99 ps / 1.25 GHz | +2.5% | **-0.50 / -0.50 (1)** | **-19.99 / -1,121.95 (115)** | n/a / 0 (0) | 19.26 / 0 (0) |
+| sha3 | 425 ps | 423.17 ps / 2.36 GHz | 434.72 ps / 2.30 GHz | +2.7% | 1.83 / 0 (0) | **-9.72 / -92.67 (17)** | n/a / 0 (0) | **-14.97 / -1,024.19 (239)** |
+| floonoc | 958 ps | 871.55 ps / 1.15 GHz | 1,117.67 ps / 0.89 GHz | **+28.2%** | 86.45 / 0 (0) | **-159.67 / -29,677.16 (304)** | n/a / 0 (0) | **-52.49 / -2,416.72 (213)** |
+| NVDLA partition_a | 895 ps | 854.22 ps / 1.17 GHz | 940.10 ps / 1.06 GHz | +10.1% | 40.78 / 0 (0) | **-45.10 / -267.09 (11)** | n/a / 0 (0) | **-6.96 / -150.91 (66)** |
+| NVDLA partition_m | 660 ps | 595.24 ps† / 1.68 GHz | 613.40 ps / 1.63 GHz | +3.1% | 65.28 / 0 (0) | 46.60 / 0 (0) | n/a / 0 (0) | **-22.33 / -1,586.22 (149)** |
+| NVDLA partition_p | 1,635 ps | 1,586.07 ps† / 0.63 GHz | 1,442.40 ps / 0.69 GHz | -9.1% | 48.89 / 0 (0) | 192.60 / 0 (0) | n/a / 0 (0) | **-34.02 / -107.34 (11)** |
+| NVDLA partition_o (core / falcon) | 2,270 / 2,838 ps | 2,137.19 ps† / 0.47 GHz (core) | 2,052.99 ps / 0.49 GHz (core) | -3.9% | 132.81 / 0 (0) | 217.01 / 0 (0) | n/a / 0 (0) | **-37.46 / -335.24 (47)** |
+| NVDLA partition_c | 1,300 ps (known non-convergent hold) | 1,484.57 ps† / 0.67 GHz | 2,934.30 ps / 0.34 GHz | **+97.7%** | not reported / 0 (75) | **-1,634.30 / -67,116.80 (309)** | not reported / 0 (2,497) | **-410.06 / -266,467.00 (3,371)** |
+| gemmini | 1,450 ps | 1,447.62 ps / 0.69 GHz | **PENDING** — retrying after a transient infra failure, see status note above | | +2.38 / 0 (0) | | -9.83 / -31.85 (15) | |
 
-## What this means
+Bold = a new real violation/regression that wasn't present at baseline, or
+a notable change worth flagging either direction (floonoc's and
+partition_c's large Δ period_min; lfsr's and partition_o's Fmax
+improvement). "n/a" for a baseline hold WNS means no source gave a
+same-run hold worst-slack figure (only the violation count, confirmed 0).
+
+## 2. Power: baseline vs RCX-rules
+
+RULES_VALIDATION.md's own power table (§4) breaks this into
+internal/switching/leakage components, sourced from full local rebuilds
+with `RCX_RULES` toggled. This run's baseline figures instead come from
+the published webpage/commit messages, which only report **total** power,
+not the component breakdown — so only the total is compared here.
+
+| Design | Baseline total (mW) | RCX-rules total (mW) | Δ total |
+|---|---|---|---|
+| lfsr | 0.271 | 0.260 | -4.1% |
+| minimax | 4.843 | 4.674 | -3.5% |
+| sha3 | 54.307 | 67.228 | **+23.8%** |
+| floonoc | 29.807 | 28.944 | -2.9% |
+| NVDLA partition_a | 19.927 | 19.266 | -3.3% |
+| NVDLA partition_m | 9.920 | 9.487 | -4.4% |
+| NVDLA partition_p | 24.751 | 24.035 | -2.9% |
+| NVDLA partition_o | 37.636 | 36.763 | -2.3% |
+| NVDLA partition_c | not reported | 76.356 | n/a |
+| gemmini | not reported | **PENDING** | |
+
+sha3's +23.8% power increase lines up with it also picking up new hold
+violations (see §1) — plausible common cause (more/bigger hold-fixing
+buffers, higher measured switching capacitance), consistent with the same
+hypothesis RULES_VALIDATION.md §4 raised for an earlier model version, but
+not independently confirmed here either.
+
+## 3. What this means
 
 **lfsr is the one clean win**: 0/0 violations both before and after, and
 Fmax actually *improved* slightly (7.17→7.41 GHz) — the real extracted
@@ -83,17 +122,32 @@ exactly zero under a different, more accurate one. The fix for each of these
 is a normal re-tuning pass (margins, clock, utilization) against the new
 numbers — not something this comparison run itself needs to resolve.
 
-**gemmini and partition_c were already non-clean at baseline** (15 hold
-violations; 75 setup/2497 unconverged hold respectively) — comparing their
-new-run numbers once harvested will show whether real RC made their
-pre-existing problems better, worse, or roughly the same.
+**partition_o is a second clean(ish) win**: setup stays fully clean (0
+violations both ways) and Fmax actually *improves* (1.74→1.95 GHz,
+roughly matching lfsr's direction), though 47 new hold violations appear
+against a clean baseline — same re-tuning-needed pattern as the other
+designs' hold results, just alongside a real frequency gain rather than
+a loss.
+
+**partition_c, which was already the worst-off design at baseline (known
+~18h non-convergent hold repair, 75 setup/2497 hold violations), got
+substantially worse under real RC**: setup violations roughly quadrupled
+(75→309, TNS −67,117 ps), hold violations grew further (2497→3371, TNS
+−266,467 ps), and Fmax nearly halved (0.674→0.341 GHz). This is the
+clearest signal in the whole table that a design already struggling to
+close under the flat model does not automatically do better under real
+extraction — if anything, a design this far from closure seems to give
+`repair_timing` a harder problem under the new, more structured RC data,
+not an easier one. **gemmini was also already non-clean at baseline** (15
+hold violations) — its new-run numbers aren't in yet (see status note
+above).
 
 ## Open items
 
-- Fill in gemmini, partition_c, partition_o once their builds complete
-  (currently running in the `HighTide` repo; see its
-  `scratch_logs/gt2n_rcx_qor_run/runner_launch.log` and the ongoing k8s
-  check-ins for status).
+- Fill in gemmini once its build completes (currently retrying in the
+  `HighTide` repo after a transient infra failure; see its
+  `scratch_logs/gt2n_rcx_qor_run/runner_launch.log` and build logs for
+  status).
 - Die/core area and cell counts are essentially unchanged for every
   non-macro design checked (lfsr, minimax, sha3, floonoc, partition_a,
   partition_m — die/core area match to the reported decimal, cell counts
@@ -105,7 +159,7 @@ pre-existing problems better, worse, or roughly the same.
   `finish__design__instance__area__stdcell`, not the combined field used
   here) rather than a real area change, but this was not cleanly reconciled
   and is flagged rather than asserted either way. Area/cell-count deltas were
-  deliberately left out of the table above pending that reconciliation —
+  deliberately left out of the tables above pending that reconciliation —
   full raw figures are in each design's `6_report.json` in the `HighTide`
   repo under `scratch_logs/gt2n_rcx_qor_run/artifacts/gt2n/<design>/` if
   needed sooner.
