@@ -9,7 +9,7 @@ frontside signal routing, backside power delivery).
 ## Why this exists
 
 GT2N has no OpenRCX rules file upstream. Without one, every GT2N build
-falls back to `setRC.tcl`/`set_layer_rc` — a single capacitance and
+falls back to `setRC.tcl`/`set_layer_rc` a single capacitance and
 resistance scalar per metal layer, with no concept of which neighbor a
 wire couples to, no distance-dependence, and no distinction between
 over/under/diagonal coupling. This project builds a real rules file
