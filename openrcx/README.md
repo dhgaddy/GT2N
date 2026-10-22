@@ -30,6 +30,20 @@ absolute agreement with a true reference extractor has not been validated yet.
 
 ## How to use it
 
+HighTide example, in the BUILD.bazel file for your design:
+```bazel
+hightide_design(
+    name = "partition_a",
+    top = "NV_NVDLA_partition_a",
+    platform = "gt2n",
+    verilog_files = ["//designs/src/NVDLA:rtl"],
+    sources = {
+        "SDC_FILE": [":constraint.sdc"],
+        "PRE_CTS_TCL": [":pre_cts.tcl"],
+        "RCX_RULES": [":gt2n_combined.rcx.model"],
+    },
+```
+OpenROAD example:
 ```tcl
 get_model_corners -ext_model_file gt2n_combined.rcx.model
 define_rcx_corners -corner_list "TYP"
