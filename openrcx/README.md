@@ -124,22 +124,20 @@ crash or a solver-precision failure on very weak/long-range coupling that result
 (root-caused and confirmed, not a parsing or config bug).
 
 **The gap is not a silent zero.** Every one of these missing
-combinations still gets served *something* at runtime — OpenRCX never
+combinations still gets served *something* at runtime, OpenRCX never
 returns a null/zero lookup for them:
 
 - **162 of the 175 non-RDL gaps** come from one specific solver crash
   bug (numerical divergence in a particular class of "Under"-type
   geometry) that has since been patched upstream in the solver fork,
   but patching the crash didn't make those specific patterns
-  converge — they hit a separate, deeper solver-precision limitation
+  converge. Instead they hit a separate, deeper solver-precision limitation
   on weak coupling instead. For these, OpenRCX falls back to a pooled
   isolated-pattern (1-2 wire) substitute for that exact layer-pair
   relationship: real measured physics of the right geometry and
   distance-dependence, just measured in a different wire-count
-  context (fewer neighboring wires than the fully-coupled case). The
-  quantified bias this introduces is in the single-digit-to-low-teens
-  percent range — not zero, but bounded and characterized, not an
-  unbounded error. 14 of the underlying metal-pair relationships (out
+  context (fewer neighboring wires than the fully-coupled case).
+  14 of the underlying metal-pair relationships (out
   of 29 affected) have *no* coverage at any spacing for this
   substitute either; those specifically fall back one level further,
   to OpenRCX's own cross-pattern interpolation using the two nearest
