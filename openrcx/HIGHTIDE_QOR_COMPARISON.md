@@ -94,12 +94,48 @@ not the component breakdown — so only the total is compared here.
 | gemmini | not reported | **PENDING** | |
 
 sha3's +23.8% power increase lines up with it also picking up new hold
-violations (see §1) — plausible common cause (more/bigger hold-fixing
-buffers, higher measured switching capacitance), consistent with the same
+violations (see §1), but per §3 the layout (and so the buffer count) is
+identical between the two runs — the likely shared root cause is simply
+that both numbers come from the same extracted net capacitance: switching
+power is computed directly from it, and real OpenRCX capacitance differs
+per net from the flat `setRC.tcl` estimate, which is also what is driving
+the new hold violations. This is directionally consistent with the
 hypothesis RULES_VALIDATION.md §4 raised for an earlier model version, but
 not independently confirmed here either.
 
-## 3. What this means
+## 3. Why violations change despite identical placement and routing
+
+Confirmed directly from gt2n's `flow/scripts/` sources: `RCX_RULES` (and the
+`extract_parasitics` call it feeds) is read in exactly one place in the
+entire flow — `final_report.tcl`, which reloads the already-finished
+`6_1_fill.odb` (post-route, post-fill) purely to re-score it for the final
+QoR report. No earlier stage — synth, floorplan, place, CTS, global route,
+detailed route, or `repair_timing` — ever reads `RCX_RULES`; every
+intermediate stage always falls back to `estimate_parasitics
+-global_routing` regardless of whether `RCX_RULES` is set, confirmed by
+that fallback log line appearing unconditionally in every gt2n build in
+this run, baseline and RCX-rules alike.
+
+**Practical consequence: for a given design, its baseline build and its
+RCX_RULES build place and route the exact same netlist identically.** Every
+cell placement, every route, every buffer `repair_timing` inserts is
+byte-for-byte the same between the two runs — `repair_timing` never sees
+the real extracted RC in either configuration; it only ever optimizes
+against the flat `setRC.tcl` estimate. The new/different WNS, TNS, and
+violation counts in the tables above are therefore **not** the optimizer
+reacting differently to more accurate RC. They are OpenSTA scoring one
+identical, already-frozen layout against two different RC datasets at
+report time only — real OpenRCX-extracted parasitics in one case, the flat
+per-layer estimate in the other. A design that moves from clean to
+violating under RCX_RULES was always marginal on its actual wiring; the
+real RC simply reveals timing paths the flat estimate had been
+(inadvertently) masking, rather than producing a harder optimization
+problem in-flow. The same logic applies to the power deltas in §2: total
+power is recomputed from extracted net capacitance at report time, not
+from a different buffer count or placement, since none of that changes
+between the two runs.
+
+## 4. What this means
 
 **lfsr is the one clean win**: 0/0 violations both before and after, and
 Fmax actually *improved* slightly (7.17→7.41 GHz) — the real extracted
@@ -135,10 +171,12 @@ substantially worse under real RC**: setup violations roughly quadrupled
 (75→309, TNS −67,117 ps), hold violations grew further (2497→3371, TNS
 −266,467 ps), and Fmax nearly halved (0.674→0.341 GHz). This is the
 clearest signal in the whole table that a design already struggling to
-close under the flat model does not automatically do better under real
-extraction — if anything, a design this far from closure seems to give
-`repair_timing` a harder problem under the new, more structured RC data,
-not an easier one. **gemmini was also already non-clean at baseline** (15
+close under the flat model does not automatically score better once its
+identical, frozen layout is re-evaluated against real extracted RC — per
+§3, the layout itself is unchanged, so this means the margins
+`repair_timing` left in place (tuned only against the flat `setRC.tcl`
+estimate) simply absorb real RC far worse the further a design already was
+from closure. **gemmini was also already non-clean at baseline** (15
 hold violations) — its new-run numbers aren't in yet (see status note
 above).
 
